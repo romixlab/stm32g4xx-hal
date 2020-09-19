@@ -65,3 +65,4 @@ pub mod rcc;
 pub mod time;
 // pub mod timer;
 // pub mod watchdog;
+pub mod pwr;
