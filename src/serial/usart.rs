@@ -8,7 +8,6 @@ use crate::gpio::{gpioa::*, gpiob::*, gpioc::*, gpiod::*};
 use crate::prelude::*;
 use crate::rcc::Rcc;
 use crate::stm32::*;
-
 // use cortex_m::interrupt;
 use nb::block;
 
@@ -622,12 +621,12 @@ rx: [
 ]);
 uart_shared!(USART2, USART2_RX, USART2_TX,
     tx: [
-        (PA2, AltFunction::AF1),
+        (PA2, AltFunction::AF7),
         (PA14, AltFunction::AF1),
         (PD5, AltFunction::AF0),
     ],
     rx: [
-        (PA3, AltFunction::AF1),
+        (PA3, AltFunction::AF7),
         (PA15, AltFunction::AF1),
         (PD6, AltFunction::AF0),
     ]
