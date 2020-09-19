@@ -67,3 +67,4 @@ pub mod time;
 // pub mod watchdog;
 pub mod pwr;
 pub mod lptim;
+pub mod timer;
