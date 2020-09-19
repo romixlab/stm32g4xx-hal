@@ -15,6 +15,7 @@ version = "0.0.0"
 cortex-m = "0.6"
 nb = "0.1.1"
 stm32g4 = "0.11"
+cast = { version = "0.2.2", default-features = false }
 
 [dependencies.bare-metal]
 features = ["const-fn"]
