@@ -30,6 +30,12 @@ pub struct Clocks {
     pub pll_clk: PLLClocks,
 }
 
+impl Clocks {
+    pub fn sysclk(&self) -> Hertz {
+        self.sys_clk
+    }
+}
+
 /// PLL Clock frequencies
 #[derive(Clone, Copy)]
 pub struct PLLClocks {

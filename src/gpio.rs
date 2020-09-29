@@ -336,6 +336,11 @@ macro_rules! gpio {
                         $PXi { _mode: PhantomData }
                     }
 
+                    /// Clear the interrupt pending bit for this pin
+                    pub fn clear_interrupt_pending_bit(&mut self) {
+                        unsafe { (*EXTI::ptr()).pr1.write(|w| w.bits(1 << $i) ) };
+                    }
+
                     /// Set pin speed
                     pub fn set_speed(self, speed: Speed) -> Self {
                         let offset = 2 * $i;
