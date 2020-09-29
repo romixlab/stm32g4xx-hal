@@ -318,16 +318,16 @@ macro_rules! gpio {
                         let mask = $Pxn << offset;
                         let reset = !(0xff << offset);
                         match $i as u8 {
-                            0..=4   => syscfg.exticr1.modify(|r, w| unsafe {
+                            0..=3   => syscfg.exticr1.modify(|r, w| unsafe {
                                 w.bits(r.bits() & reset | mask)
                             }),
-                            4..=8  => syscfg.exticr2.modify(|r, w| unsafe {
+                            4..=7  => syscfg.exticr2.modify(|r, w| unsafe {
                                 w.bits(r.bits() & reset | mask)
                             }),
-                            8..=12 => syscfg.exticr3.modify(|r, w| unsafe {
+                            8..=11 => syscfg.exticr3.modify(|r, w| unsafe {
                                 w.bits(r.bits() & reset | mask)
                             }),
-                            12..=16 => syscfg.exticr4.modify(|r, w| unsafe {
+                            12..=15 => syscfg.exticr4.modify(|r, w| unsafe {
                                 w.bits(r.bits() & reset | mask)
                             }),
                             _ => unreachable!(),

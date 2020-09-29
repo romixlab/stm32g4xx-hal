@@ -253,16 +253,16 @@ pub struct PllConfig {
     pub p: Option<PLLPDiv>,
 }
 
-/// This default gives a 64MHz PLL R Clk, no Q or P clocks.
+/// This default gives a 160MHz PLL R Clk, 80MHz Q, 160MHz P clocks.
 impl Default for PllConfig {
     fn default() -> PllConfig {
         PllConfig {
             mux: PLLSrc::HSI,
             m: 2,
-            n: 64, // This should actually cause a 256MHz clock...
+            n: 40,
             r: Some(PLLQRDiv::Div2),
-            q: None,
-            p: None,
+            q: Some(PLLQRDiv::Div4),
+            p: Some(PLLPDiv::Div2),
         }
     }
 }

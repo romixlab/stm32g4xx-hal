@@ -12,8 +12,8 @@
 )))]
 compile_error!("This crate requires one of the following features enabled: stm32g431, stm32g441, stm32g491, stm32g473, stm32g483, stm32g474 or stm32g484");
 
-use bare_metal;
-use void;
+//use bare_metal;
+//use void;
 
 pub use cortex_m;
 pub use embedded_hal as hal;
@@ -46,7 +46,7 @@ pub mod prelude;
 pub mod rcc;
 // pub mod rng;
 // pub mod serial;
-// pub mod spi;
+pub mod spi; // !
 // pub mod stopwatch;
 pub mod time;
 pub mod timer;

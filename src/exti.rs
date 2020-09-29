@@ -147,7 +147,7 @@ impl ExtiExt for EXTI {
         }
     }
 
-    fn is_pending(&self, ev: Event, edge: SignalEdge) -> bool {
+    fn is_pending(&self, ev: Event, _edge: SignalEdge) -> bool {
         match ev as u32 {
             line if line < 32 => {
                 let mask = 1 << line;

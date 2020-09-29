@@ -8,7 +8,8 @@ use void::Void;
 use crate::rcc::Rcc;
 
 #[cfg(any(
-    feature = "stm32g431"
+    feature = "stm32g431",
+    feature = "stm32g474"
 ))]
 use crate::stm32::{TIM1, TIM15, TIM16, TIM17, TIM2, TIM3, TIM4, TIM6, TIM7, TIM8};
 

@@ -44,16 +44,16 @@ pub struct PLLClocks {
 impl Default for Clocks {
     fn default() -> Clocks {
         Clocks {
-            sys_clk: 16.mhz(),
-            ahb_clk: 16.mhz(),
-            core_clk: 2.mhz(),
-            apb1_clk: 16.mhz(),
-            apb2_clk: 16.mhz(),
-            apb_tim_clk: 16.mhz(),
+            sys_clk: 160.mhz(),
+            ahb_clk: 160.mhz(),
+            core_clk: 160.mhz(),
+            apb1_clk: 160.mhz(),
+            apb2_clk: 160.mhz(),
+            apb_tim_clk: 160.mhz(),
             pll_clk: PLLClocks {
-                r: 16.mhz(),
-                q: None,
-                p: None,
+                r: 160.mhz(),
+                q: Some(80.mhz()),
+                p: Some(160.mhz()),
             },
         }
     }
@@ -233,7 +233,7 @@ impl Rcc {
         });
 
         // Enable PLL
-        self.rb.cr.write(|w| w.pllsyson().set_bit());
+        self.rb.cr.modify(|_, w| w.pllsyson().set_bit());
         while self.rb.cr.read().pllsysrdy().bit_is_clear() {}
 
         PLLClocks { r: r.hz(), q, p }
