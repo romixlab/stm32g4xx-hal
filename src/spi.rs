@@ -146,40 +146,26 @@ macro_rules! spi {
                     _ => 0b111,
                 };
 
-                spi.cr2.write(|w| unsafe {
-                    w.ds().bits(0b0111).frxth().set_bit()
+                spi.cr2.modify(|_, w| unsafe {
+                    w
+                    .ds().bits(0b0111) // Data size = 8bit
+                    .frxth().set_bit() // RXNE event is generated if the FIFO level is greater than or equal to 1/4 (8-bit)
                 });
 
-                // mstr: master configuration
-                // lsbfirst: MSB first
-                // ssm: enable software slave management (NSS pin free for other uses)
-                // ssi: set nss high = master mode
-                // dff: 8 bit frames
-                // bidimode: 2-line unidirectional
-                // spe: enable the SPI bus
                 spi.cr1.write(|w| unsafe {
-                    w.cpha()
-                        .bit(mode.phase == Phase::CaptureOnSecondTransition)
-                        .cpol()
-                        .bit(mode.polarity == Polarity::IdleHigh)
-                        .mstr()
-                        .set_bit()
-                        .br()
-                        .bits(br)
-                        .lsbfirst()
-                        .clear_bit()
-                        .ssm()
-                        .set_bit()
-                        .ssi()
-                        .set_bit()
-                        .rxonly()
-                        .clear_bit()
-                        .dff()
-                        .clear_bit()
-                        .bidimode()
-                        .set_bit()
+                    w
+                    .cpha().bit(mode.phase == Phase::CaptureOnSecondTransition)
+                    .cpol().bit(mode.polarity == Polarity::IdleHigh)
+                    .mstr().set_bit()           // master configuration
+                    .br().bits(br)              // clock prescaler
+                    .lsbfirst().clear_bit()     // MSB first
+                    .ssm().set_bit()            // enable software slave management (NSS pin free for other uses)
+                    .ssi().set_bit()            // set nss high = master mode
+                    .rxonly().clear_bit()       // full-duplex
+                    .crcen().clear_bit()        // disable CRC
+                    .bidimode().clear_bit()     // 2-line unidirectional
                 });
-                spi.cr1.modify(|_, w| w.spe().set_bit());
+                spi.cr1.modify(|_, w| w.spe().set_bit()); // enable the SPI bus
 
                 Spi { spi, pins }
             }

@@ -12,7 +12,7 @@ pub const HSI_FREQ: u32 = 16_000_000;
 pub const HSI48_FREQ: u32 = 48_000_000;
 
 /// Clock frequencies
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Clocks {
     /// System frequency
     pub sys_clk: Hertz,
@@ -37,7 +37,7 @@ impl Clocks {
 }
 
 /// PLL Clock frequencies
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct PLLClocks {
     /// R frequency
     pub r: Hertz,

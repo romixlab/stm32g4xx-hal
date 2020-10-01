@@ -59,7 +59,7 @@ pub enum SignalEdge {
 }
 
 #[allow(dead_code)]
-pub(crate) enum AltFunction {
+pub enum AltFunction {
     AF0 = 0,
     AF1 = 1,
     AF2 = 2,
@@ -304,7 +304,7 @@ macro_rules! gpio {
                     }
 
                     /// Configures the pin as external trigger
-                    pub fn listen(self, edge: SignalEdge, syscfg: &mut SYSCFG, exti: &mut EXTI) -> $PXi<Input<PushPull>> {
+                    pub fn listen(self, edge: SignalEdge, syscfg: &mut SYSCFG, exti: &mut EXTI) -> $PXi<Input<PullDown>> {
                         let offset = 2 * $i;
                         unsafe {
                             &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
@@ -353,7 +353,7 @@ macro_rules! gpio {
                     }
 
                     #[allow(dead_code)]
-                    pub(crate) fn set_alt_mode(&self, mode: AltFunction) {
+                    pub fn set_alt_mode(&self, mode: AltFunction) {
                         let mode = mode as u32;
                         let offset = 2 * $i;
                         let offset2 = 4 * $i;
