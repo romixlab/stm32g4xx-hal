@@ -169,7 +169,7 @@ impl Rcc {
             clocks: Clocks {
                 pll_clk,
                 sys_clk,
-                core_clk: (ahb_freq / 8).hz(),
+                core_clk: ahb_freq.hz(),
                 ahb_clk: ahb_freq.hz(),
                 apb1_clk: apb1_freq.hz(),
                 apb2_clk: apb2_freq.hz(),
@@ -211,21 +211,42 @@ impl Rcc {
             _ => (pll_freq/2, 0b00u8)
         };
 
-        let q = None;
+        let q = match pll_cfg.q {
+            Some(div) => {
+                let (q, pllq_bits) = match div {
+                    PLLQRDiv::Div2 => (pll_freq/2, 0b00u8),
+                    PLLQRDiv::Div4 => (pll_freq/4, 0b01u8),
+                    PLLQRDiv::Div6 => (pll_freq/6, 0b10u8),
+                    PLLQRDiv::Div8 => (pll_freq/8, 0b11u8),
+                };
+                self.rb
+                    .pllsyscfgr
+                    .modify(|_, w| unsafe { w
+                        .pllsysq().bits(pllq_bits)
+                        .pllsysqen().set_bit()
+                    });
+                Some(q.hz())
+            }
+            _ => None,
+        };
+
         let p = match pll_cfg.p {
             Some(div) => {
                 let div: u8 = div as u8;
 
                 self.rb
                     .pllsyscfgr
-                    .write(move |w| unsafe { w.pllsyspdiv().bits(div) });
+                    .modify(move |_, w| unsafe { w
+                        .pllsyspdiv().bits(div)
+                        .pllpen().set_bit()
+                    });
                 let req = pll_freq / div as u32;
                 Some(req.hz())
             }
             _ => None,
         };
 
-        self.rb.pllsyscfgr.write(move |w| unsafe {
+        self.rb.pllsyscfgr.modify(move |_, w| unsafe {
             w.pllsrc()
                 .bits(pll_sw_bits)
                 .pllsysm()
