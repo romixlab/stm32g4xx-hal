@@ -51,3 +51,4 @@ pub mod spi; // !
 pub mod time;
 pub mod timer;
 // pub mod watchdog;
+pub mod can;
