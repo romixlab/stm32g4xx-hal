@@ -176,7 +176,7 @@ macro_rules! can {
                 rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().set_bit());
                 rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().clear_bit());
                 // Select PLLQ as
-                rcc.rb.ccpir1.modify(|_, w| w.fdcansel().bits()); // 0b00 - HSE, 0b01 - PLLQ, 0b10 - PCLK, 0b11 - RSVD
+                //rcc.rb.ccpir1.modify(|_, w| w.fdcansel().bits()); // 0b00 - HSE, 0b01 - PLLQ, 0b10 - PCLK, 0b11 - RSVD
                 // Enable DWT if not already
                 dwt.enable_cycle_counter();
                 // Check that reset succeeded
