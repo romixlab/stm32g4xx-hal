@@ -1,3 +1,4 @@
+
 use crate::gpio::{
     gpioa::{ PA8, PA11, PA12, PA15 },
     gpiob::{ PB3, PB4, PB5, PB6, PB8, PB9 },
@@ -8,6 +9,103 @@ use crate::gpio::{AltFunction, DefaultMode};
 use crate::pac::{FDCAN1, FDCAN2, FDCAN3};
 use crate::rcc::Rcc;
 use cortex_m::peripheral::DWT;
+
+use vcell::VolatileCell;
+
+#[repr(C)]
+pub struct RxFifoElement{
+    pub r0: R0,
+    pub r1: R1,
+    pub r2_18: [R2_18; 16],
+    //_reserved1: [u32; 16usize],
+}
+
+pub struct R0{
+    register: vcell::VolatileCell<u32>
+}
+pub mod rx_fifo_element_r0;
+
+pub struct R1{
+    register: vcell::VolatileCell<u32>
+}
+pub mod rx_fifo_element_r1;
+
+pub struct R2_18{
+    register: vcell::VolatileCell<u32>
+}
+pub mod rx_fifo_element_r2_18;
+
+#[repr(C)]
+pub struct TxBufferElement{
+    pub t0: T0,
+    pub t1: T1,
+    pub t2_18: [T2_18; 16],
+    //_reserved1: [u32; 16usize],
+}
+
+pub struct T0{
+    register: vcell::VolatileCell<u32>
+}
+pub mod tx_buffer_element_t0;
+
+pub struct T1{
+    register: vcell::VolatileCell<u32>
+}
+pub mod tx_buffer_element_t1;
+
+pub struct T2_18{
+    register: vcell::VolatileCell<u32>
+}
+pub mod tx_buffer_element_r2_18;
+
+
+#[repr(C)]
+pub struct TxEventFifoElement{
+    pub e0: E0,
+    pub e1: E1,
+    //_reserved1: [u32; 16usize],
+}
+
+pub struct E0{
+    register: vcell::VolatileCell<u32>
+}
+pub mod tx_event_fifo_element_e0;
+
+pub struct E1{
+    register: vcell::VolatileCell<u32>
+}
+pub mod tx_event_fifo_element_e1;
+
+
+#[repr(C)]
+pub struct StandartMessageIdFilter{
+    pub s0: S0,
+}
+
+pub struct S0{
+    register: vcell::VolatileCell<u32>
+}
+pub mod standart_message_id_filter_s0;
+
+#[repr(C)]
+pub struct ExtendedMessageIdFilter{
+    pub f0: F0,
+    pub f1: F1,
+}
+
+pub struct F0{
+    register: vcell::VolatileCell<u32>
+}
+pub mod extended_message_id_filter_f0;
+
+pub struct F1{
+    register: vcell::VolatileCell<u32>
+}
+pub mod extended_message_id_filter_f1;
+
+
+
+
 
 #[derive(Debug)]
 pub enum Error {
