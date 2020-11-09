@@ -6,7 +6,7 @@ pub struct R {
 pub struct W {
     bits: u32,
 }
-impl super::T1 {
+impl super::TxBufferElementT1 {
     #[doc = r"Modifies the contents of the register"]
     #[inline(always)]
     pub fn modify<F>(&self, f: F)

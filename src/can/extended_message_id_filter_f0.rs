@@ -6,12 +6,12 @@ pub struct R {
 pub struct W {
     bits: u32,
 }
-impl super::F0 {
+impl super::ExtendedMessageIdFilterF0 {
     #[doc = r"Modifies the contents of the register"]
     #[inline(always)]
     pub fn modify<F>(&self, f: F)
-        where
-                for<'w> F: FnOnce(&R, &'w mut W) -> &'w mut W,
+    where
+        for<'w> F: FnOnce(&R, &'w mut W) -> &'w mut W,
     {
         let bits = self.register.get();
         self.register.set(f(&R { bits }, &mut W { bits }).bits);
@@ -26,20 +26,20 @@ impl super::F0 {
     #[doc = r"Writes to the register"]
     #[inline(always)]
     pub fn write<F>(&self, f: F)
-        where
-            F: FnOnce(&mut W) -> &mut W,
+    where
+        F: FnOnce(&mut W) -> &mut W,
     {
         self.register.set(
             f(&mut W {
                 bits: Self::reset_value(),
             })
-                .bits,
+            .bits,
         );
     }
     #[doc = r"Reset value of the register"]
     #[inline(always)]
     pub const fn reset_value() -> u32 {
-        0xffff_0000
+        0x0000_0000
     }
     #[doc = r"Writes the reset value to the register"]
     #[inline(always)]
@@ -48,46 +48,75 @@ impl super::F0 {
     }
 }
 
-pub struct EFECR{
+use super::FilterConfiguration;
+#[doc = "Reader of extended filter element configuration"]
+pub struct EFECR {
     bits: u8,
 }
-impl EFECR{
-    pub fn bits(&self) -> u8 {
-        self.bits
+impl EFECR {
+    pub fn variant(&self) -> FilterConfiguration {
+        use FilterConfiguration::*;
+        match self.bits {
+            0b000 => Disabled,
+            0b001 => Store0,
+            0b010 => Store1,
+            0b011 => Reject,
+            0b100 => SetPriority,
+            0b101 => SetPriorityAndStore0,
+            0b110 => SetPriorityAndStore1,
+            0b111 => NotUsed,
+            _ => unreachable!(),
+        }
     }
 }
 
-pub struct _EFECW<'a> {
+#[doc = "Writer of extended filter element configuration"]
+pub struct EFECW<'a> {
     w: &'a mut W,
 }
-impl<'a> _EFECW<'a> {
+impl<'a> EFECW<'a> {
+    #[doc = "Set raw bits"]
+    #[inline(always)]
     pub unsafe fn bits(self, value: u8) -> &'a mut W {
-        self.w.bits &= !(0x07 << 29);
-        self.w.bits |= ((value as u32) & 0x07) << 29;
+        self.w.bits &= !(0b111 << 29);
+        self.w.bits |= ((value as u32) & 0b111) << 29;
         self.w
+    }
+    #[doc = "Set enumerated value"]
+    #[inline(always)]
+    pub fn variant(self, variant: FilterConfiguration) -> &'a mut W {
+        unsafe {
+            self.bits(variant.into())
+        }
     }
 }
 
-pub struct EFID1R{
+#[doc = "Reader of extended filter ID 1"]
+pub struct EFID1R {
     bits: u32,
 }
-impl EFID1R{
+impl EFID1R {
     pub fn bits(&self) -> u32 {
         self.bits
     }
-}
-
-pub struct _EFID1W<'a> {
-    w: &'a mut W,
-}
-impl<'a> _EFID1W<'a> {
-    pub unsafe fn bits(self, value: u32) -> &'a mut W {
-        self.w.bits &= !(0x1FFFFFFF << 0);
-        self.w.bits |= ((value as u32) & 0x1FFFFFFF) << 0;
-        self.w
+    pub fn extended_id(&self) -> u32 {
+        self.bits
     }
 }
 
+pub struct EFID1W<'a> {
+    w: &'a mut W,
+}
+impl<'a> EFID1W<'a> {
+    pub fn bits(self, value: u32) -> &'a mut W {
+        self.w.bits &= !(0x1F_FF_FF_FF << 0);
+        self.w.bits |= ((value as u32) & 0x1F_FF_FF_FF) << 0;
+        self.w
+    }
+    pub fn extended_id(self, value: u32) -> &'a mut W {
+        self.bits(value)
+    }
+}
 
 impl R {
     #[inline(always)]
@@ -96,12 +125,12 @@ impl R {
     }
     #[inline(always)]
     pub fn efec(&self) -> EFECR {
-        let bits = ((self.bits >> 29) & 0x07) as u8;
+        let bits = ((self.bits >> 29) & 0b111) as u8;
         EFECR { bits }
     }
     #[inline(always)]
     pub fn efid1(&self) -> EFID1R {
-        let bits = ((self.bits >> 0) & 0x1FFFFFFF) as u32;
+        let bits = (self.bits & 0x1F_FF_FF_FF) as u32;
         EFID1R { bits }
     }
 }
@@ -113,12 +142,11 @@ impl W {
         self
     }
     #[inline(always)]
-    pub fn efec(&mut self) -> _EFECW {
-        _EFECW { w: self }
+    pub fn efec(&mut self) -> EFECW {
+        EFECW { w: self }
     }
     #[inline(always)]
-    pub fn efid1(&mut self) -> _EFID1W {
-        _EFID1W { w: self }
+    pub fn efid1(&mut self) -> EFID1W {
+        EFID1W { w: self }
     }
-    
 }

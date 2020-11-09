@@ -6,7 +6,7 @@ pub struct R {
 pub struct W {
     bits: u32,
 }
-impl super::E1 {
+impl super::TxEventFifoElementE1 {
     #[doc = r"Modifies the contents of the register"]
     #[inline(always)]
     pub fn modify<F>(&self, f: F)
