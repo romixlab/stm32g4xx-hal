@@ -39,7 +39,7 @@ impl super::TxBufferElementT0 {
     #[doc = r"Reset value of the register"]
     #[inline(always)]
     pub const fn reset_value() -> u32 {
-        0xffff_0000
+        0x0000_0000
     }
     #[doc = r"Writes the reset value to the register"]
     #[inline(always)]
@@ -252,8 +252,8 @@ pub struct IDW<'a> {
 }
 impl<'a> IDW<'a> {
     pub unsafe fn bits(self, value: u32) -> &'a mut W {
-        self.w.bits &= !(0x1FFFFFFF << 0);
-        self.w.bits |= ((value as u32) & 0x1FFFFFFF) << 0;
+        self.w.bits &= !(0x1F_FF_FF_FF << 0);
+        self.w.bits |= ((value as u32) & 0x1F_FF_FF_FF) << 0;
         self.w
     }
     pub fn standard_id(self, value: u16) -> &'a mut W {

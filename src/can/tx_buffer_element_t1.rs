@@ -39,7 +39,7 @@ impl super::TxBufferElementT1 {
     #[doc = r"Reset value of the register"]
     #[inline(always)]
     pub const fn reset_value() -> u32 {
-        0xffff_0000
+        0x0000_0000
     }
     #[doc = r"Writes the reset value to the register"]
     #[inline(always)]

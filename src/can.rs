@@ -8,6 +8,7 @@ use crate::gpio::{
 };
 use crate::gpio::{AltFunction, DefaultMode};
 use crate::pac::{FDCAN1, FDCAN2, FDCAN3};
+use crate::pac::fdcan::RegisterBlock;
 use crate::rcc::Rcc;
 use cortex_m::peripheral::DWT;
 
@@ -191,7 +192,6 @@ pub enum ClockSource {
     Pllq,
     Pclk
 }
-
 impl Into<u8> for ClockSource {
     fn into(self) -> u8 {
         use ClockSource::*;
@@ -201,6 +201,25 @@ impl Into<u8> for ClockSource {
             Pclk =>   0b10
         }
     }
+}
+
+pub enum ClockDiv {
+    Div1 =  0b0000,
+    Div2 =  0b0001,
+    Div4 =  0b0010,
+    Div6 =  0b0011,
+    Div8 =  0b0100,
+    Div10 = 0b0101,
+    Div12 = 0b0110,
+    Div14 = 0b0111,
+    Div16 = 0b1000,
+    Div18 = 0b1001,
+    Div20 = 0b1010,
+    Div22 = 0b1011,
+    Div24 = 0b1100,
+    Div26 = 0b1101,
+    Div28 = 0b1110,
+    Div30 = 0b1111
 }
 
 pub trait Pins<CAN> {
@@ -226,25 +245,15 @@ impl<CAN, CAN_TX, CAN_RX> Pins<CAN> for (CAN_TX, CAN_RX)
     }
 }
 
-pub struct Can<CAN, PINS> {
+/// One of the CAN controller instances
+pub struct CanInstance<CAN, PINS> {
     can: CAN,
     pins: PINS,
 }
 
-pub struct ClassicalCan<CAN, PINS> {
-    can: CAN,
+/// Consumed pins, maybe be used to reinitialize them later for other use (maybe for interrupt enable on RX pin?).
+pub struct CanPinsToken<PINS> {
     pins: PINS,
-}
-
-pub struct FdCan<CAN, PINS> {
-    can: CAN,
-    pins: PINS,
-}
-
-pub enum CanType {
-    Classical,
-    FdIso,
-    FdBosch
 }
 
 #[derive(PartialEq)]
@@ -385,33 +394,6 @@ impl fmt::Debug for InterruptReason {
     }
 }
 
-// pub trait ClassicalCanInitState {
-//     fn set_bitrate();
-// }
-//
-// pub trait ClassicalCanNormalState {
-//
-// }
-//
-// pub trait ClassicalCanBusOffState {
-//
-// }
-//
-// pub trait FdCanInitState {
-//     fn set_arbitration_bitrate();
-//     fn set_data_bitrate();
-//
-// }
-// pub trait RangeFilter {
-//     fn filter_count() -> usize;
-//     fn filter_range(from to)
-// }
-// pub trait CanExt<CAN>: Sized {
-//     fn can<PINS>(self, pins: PINS, rcc: &mut Rcc) -> Can<CAN, PINS>
-//         where
-//             PINS: Pins<CAN>;
-// }
-
 #[derive(Debug)]
 pub enum RxPinState {
     Dominant,
@@ -429,9 +411,134 @@ macro_rules! checked_wait_or {
     };
 }
 
+pub enum CanInstanceNumber {
+    Fdcan1,
+    Fdcan2,
+    Fdcan3
+}
+
+/// CAN instance with erased types
+pub struct ClassicalCanInstance {
+    regs: *const RegisterBlock,
+    instance: CanInstanceNumber
+}
+unsafe impl Send for ClassicalCanInstance {}
+impl ClassicalCanInstance {
+    pub fn send(&mut self) {
+        let mr = &MessageRam::get();
+        for i in 0..16 {
+            mr.tx_buffer[0].data[i].set(0xdeadbeef);
+            mr.tx_buffer[1].data[i].set(0xaabbccdd);
+            mr.tx_buffer[2].data[i].set(0x55aa55aa);
+        }
+
+        mr.tx_buffer[2].t0.write(|w| w.id().frame_id(FrameId::Extended(0x01_23_45_68)).rtr().transmit_data_frame());
+        unsafe { mr.tx_buffer[2].t1.write(|w| w.dlc().bits(4)) };
+
+        //mr.tx_buffer[1].data[0].set(0xaabbccdd);
+        mr.tx_buffer[1].t0.write(|w| w.id().frame_id(FrameId::Standard(0b000_0100_1000)).rtr().transmit_data_frame());
+        unsafe { mr.tx_buffer[1].t1.write(|w| w.dlc().bits(4)) };
+
+        //mr.tx_buffer[2].data[0].set(0x55aa55aa);
+        mr.tx_buffer[0].t0.write(|w| w.id().frame_id(FrameId::Standard(0x00_01)).rtr().transmit_data_frame());
+        unsafe { mr.tx_buffer[0].t1.write(|w| w.dlc().bits(4)) };
+    }
+}
+pub trait ClassicalCan {
+    unsafe fn regs(&self) -> *const RegisterBlock;
+
+    fn total_error_count(&self) -> u8 {
+        unsafe { (*self.regs()).ecr.read().cel().bits() }
+    }
+
+    fn receive_error_counter(&self) -> u8 {
+        unsafe { (*self.regs()).ecr.read().trec().bits() }
+    }
+
+    fn transmit_error_counter(&self) -> u8 {
+        unsafe { (*self.regs()).ecr.read().tec().bits() }
+    }
+
+    fn protocol_status(&self) -> ProtocolStatus {
+        ProtocolStatus(unsafe { (*self.regs()).psr.read() })
+    }
+
+    fn interrupt_reason(&self) -> InterruptReason {
+        InterruptReason(unsafe { (*self.regs()).ir.read() })
+    }
+
+    fn rx_pin_state(&self) -> RxPinState {
+        if unsafe { (*self.regs()).test.read().rx().bit_is_set() } {
+            RxPinState::Recessive
+        } else {
+            RxPinState::Dominant
+        }
+    }
+
+    fn next_queue_slot(&self) -> Option<u8> {
+        let trp = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
+        match trp {
+            0b000 => Some(0),
+            0b001 => Some(1),
+            0b010 => Some(0),
+            0b011 => Some(2),
+            0b100 => Some(0),
+            0b101 => Some(1),
+            0b110 => Some(0),
+            0b111 => None,
+            _ => unreachable!()
+        }
+    }
+
+    unsafe fn ll<F: FnMut(*const RegisterBlock)>(&mut self, mut f: F) {
+        f(self.regs());
+    }
+}
+
+impl ClassicalCan for ClassicalCanInstance {
+    unsafe fn regs(&self) -> *const RegisterBlock {
+        self.regs
+    }
+
+
+}
+/// Entry point for the CAN bus initialization
+pub struct CanController {
+    // Common to all FDCAN instances
+    clock_source: ClockSource,
+}
+impl CanController {
+    pub fn new(
+        clock_source: ClockSource,
+        rcc: &mut Rcc,
+        dwt: &mut DWT
+    ) -> Result<Self, Error> {
+        // Enable clock & reset
+        rcc.rb.apb1enr1.modify(|_, w| w.fdcanen().set_bit());
+        rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().set_bit());
+        rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().clear_bit());
+        // Select clock source
+        rcc.rb.ccipr1.modify(|_, w| unsafe { w.fdcansel().bits(clock_source.into()) }); // 0b00 - HSE, 0b01 - PLLQ, 0b10 - PCLK, 0b11 - RSVD
+        let fdcan_clk = match clock_source {
+            ClockSource::Hse(hse_freq) => hse_freq,
+            ClockSource::Pllq => match rcc.clocks.pll_clk.q {
+                Some(pllq) => pllq,
+                None => { return Err((Error::IncorrectRccConfig)); }
+            },
+            ClockSource::Pclk => rcc.clocks.apb1_clk
+        };
+        // Enable DWT if not already
+        dwt.enable_cycle_counter();
+
+        Ok(CanController {
+            clock_source,
+        })
+    }
+}
+
 macro_rules! can {
     (
-        $CANX:ident, $canX:ident,
+        $CANX:ident, $canX:ident, $CanInstanceNumber:expr,
         can_tx: [ $(($CAN_TX:ty, $CAN_TX_AF:expr),)+ ],
         can_rx: [ $(($CAN_RX:ty, $CAN_RX_AF:expr),)+ ],
     ) => {
@@ -449,39 +556,22 @@ macro_rules! can {
                 }
             }
         )*
-        impl<PINS> Can<$CANX, PINS> {
+        impl<PINS> CanInstance<$CANX, PINS> {
             pub fn new_classical(
+                can_controller: &mut CanController,
                 can: $CANX,
-                clock_source: ClockSource,
                 pins: PINS,
                 mode: Mode,
                 retransmission: Retransmission,
                 transmit_pause: TransmitPause,
+                clock_div: ClockDiv,
                 bit_timing: BitTiming,
-                rcc: &mut Rcc,
-                dwt: &mut DWT
-            ) -> Result<ClassicalCan<$CANX, PINS>, (Error, $CANX, PINS)>
+            ) -> Result<(ClassicalCanInstance, CanPinsToken<PINS>), (Error, $CANX, PINS)>
             where
                 PINS: Pins<$CANX>,
             {
                 // Configure pins
                 pins.setup();
-                // Enable clock & reset
-                rcc.rb.apb1enr1.modify(|_, w| w.fdcanen().set_bit());
-                rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().set_bit());
-                rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().clear_bit());
-                // Select clock source
-                rcc.rb.ccipr1.modify(|_, w| unsafe { w.fdcansel().bits(clock_source.into()) }); // 0b00 - HSE, 0b01 - PLLQ, 0b10 - PCLK, 0b11 - RSVD
-                let fdcan_clk = match clock_source {
-                    ClockSource::Hse(hse_freq) => hse_freq,
-                    ClockSource::Pllq => match rcc.clocks.pll_clk.q {
-                        Some(pllq) => pllq,
-                        None => { return Err((Error::IncorrectRccConfig, can, pins)); }
-                    },
-                    ClockSource::Pclk => rcc.clocks.apb1_clk
-                };
-                // Enable DWT if not already
-                dwt.enable_cycle_counter();
                 // Check that reset succeeded
                 checked_wait_or!(can.cccr.read().bits() != 0x0000_0001, (Error::ResetFail, can, pins));
                 // Unlock write access
@@ -497,8 +587,10 @@ macro_rules! can {
                 can.test.modify(|_, w| w
                     .lbck().bit(mode.is_test_mode())
                 );
+                // Enable queue mode
+                //can.txbc.modify(|_, w| w.tfqm().set_bit()); // Wrong PAL
+                can.txbc.write(|w| unsafe { w.bits(0b1 << 24) });
                 // Calculate prescaler & apply bit timings
-
                 // sync_seg = 1tq
                 // bs1 = prop_seg + phseg1 = 1..16tq
                 // bs2 = phseg2 = 1..8tq
@@ -519,67 +611,29 @@ macro_rules! can {
                 // tbs2 = 4 * tq = 0.083(3)us
                 // bit time = (1 + 11 + 4)tq = 0.3(3)us
 
+                // Configure clock divider
+                can.ckdiv.write(|w| unsafe { w.pdiv().bits(clock_div as u8) }); // 1, 2, 4, 6 .. 30
+                // Configure timings
                 can.nbtp.write(|w| unsafe { w
                     .nsjw().bits(bit_timing.nsjw)
                     .nbrp().bits(0)
                     .ntseg1().bits(bit_timing.ntseg1)
                     .tseg2().bits(bit_timing.ntseg2)
                 });
-                // Common to FDCAN1..3
-                can.ckdiv.write(|w| unsafe { w.pdiv().bits(0) }); // 1, 2, 4, 6 .. 30
                 // Transition to normal state
                 can.cccr.modify(|_, w| w.init().clear_bit());
                 checked_wait_or!(can.cccr.read().init().bit_is_set(), (Error::InitFail, can, pins));
-                Ok(ClassicalCan { can, pins })
+                Ok((ClassicalCanInstance { regs: $CANX::ptr(), instance: $CanInstanceNumber }, CanPinsToken { pins }))
             }
         }
 
-        impl<PINS> ClassicalCan<$CANX, PINS> {
-            pub fn total_error_count(&self) -> u8 {
-                self.can.ecr.read().cel().bits()
-            }
-
-            pub fn receive_error_counter(&self) -> u8 {
-                self.can.ecr.read().trec().bits()
-            }
-
-            pub fn transmit_error_counter(&self) -> u8 {
-                self.can.ecr.read().tec().bits()
-            }
-
-            pub fn protocol_status(&self) -> ProtocolStatus {
-                ProtocolStatus(self.can.psr.read())
-            }
-
-            pub fn interrupt_reason(&self) -> InterruptReason {
-                InterruptReason(self.can.ir.read())
-            }
-
-            pub fn ll<F: FnMut(&mut $CANX)>(&mut self, mut f: F) {
-                f(&mut self.can);
-            }
-
-            pub fn rx_pin_state(&self) -> RxPinState {
-                if self.can.test.read().rx().bit_is_set() {
-                    RxPinState::Recessive
-                } else {
-                    RxPinState::Dominant
-                }
-            }
-
-            pub fn send(&mut self) {
-                let mr = &MessageRam::get();
-                mr.tx_buffer[0].data[0].set(0xdeadbeef);
-                mr.tx_buffer[0].t0.write(|w| w.id().frame_id(FrameId::Standard(0x0A_BC)));
-                unsafe { mr.tx_buffer[0].t1.write(|w| w.dlc().bits(4)) };
-            }
-        }
     };
 }
 
 can!(
     FDCAN1,
     fdcan1,
+    CanInstanceNumber::Fdcan1,
     can_tx: [
         (PA12<DefaultMode>, AltFunction::AF9),
         (PB9<DefaultMode>,  AltFunction::AF9),
