@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 
-use crate::can::FrameId;
+use vhrdcan::id::{FrameId, StandardId, ExtendedId};
 
 #[doc = r"Value read from the register"]
 pub struct R {
@@ -109,9 +109,9 @@ impl IDR {
     /// Returns frame id enum
     pub fn frame_id(&self) -> FrameId {
         if self.is_extended {
-            FrameId::Extended(self.bits)
+            unsafe { FrameId::Extended(ExtendedId::new_unchecked(self.bits)) }
         } else {
-            FrameId::Standard(self.bits as u16) // correct, shifted below
+            unsafe { FrameId::Standard(StandardId::new_unchecked(self.bits as u16)) } // correct, shifted below
         }
     }
 }

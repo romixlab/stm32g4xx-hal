@@ -14,6 +14,7 @@ use cortex_m::peripheral::DWT;
 
 use vcell::VolatileCell;
 use crate::time::Hertz;
+use vhrdcan::id::FrameId;
 
 /// Rx FIFO 0 and 1 R0 register
 pub mod rx_fifo_element_r0;
@@ -169,13 +170,6 @@ impl From<FilterConfiguration> for u8 {
     fn from(variant: FilterConfiguration) -> Self {
         variant as _
     }
-}
-
-/// 11 or 29 bit frame ID
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum FrameId {
-    Standard(u16),
-    Extended(u32)
 }
 
 #[derive(Debug)]
@@ -412,15 +406,17 @@ macro_rules! checked_wait_or {
 }
 
 pub enum CanInstanceNumber {
-    Fdcan1,
-    Fdcan2,
-    Fdcan3
+    Fdcan1 = 0,
+    Fdcan2 = 1,
+    Fdcan3 = 2
 }
 
 /// CAN instance with erased types
 pub struct ClassicalCanInstance {
     regs: *const RegisterBlock,
-    instance: CanInstanceNumber
+    instance: CanInstanceNumber,
+    regs2: *const RegisterBlock,
+    regs3: *const RegisterBlock
 }
 unsafe impl Send for ClassicalCanInstance {}
 impl ClassicalCanInstance {
@@ -432,20 +428,36 @@ impl ClassicalCanInstance {
             mr.tx_buffer[2].data[i].set(0x55aa55aa);
         }
 
-        mr.tx_buffer[2].t0.write(|w| w.id().frame_id(FrameId::Extended(0x01_23_45_68)).rtr().transmit_data_frame());
+        mr.tx_buffer[2].t0.write(|w| w.id().frame_id(FrameId::new_extended(0x01_23_45_68).unwrap()).rtr().transmit_data_frame());
         unsafe { mr.tx_buffer[2].t1.write(|w| w.dlc().bits(4)) };
 
         //mr.tx_buffer[1].data[0].set(0xaabbccdd);
-        mr.tx_buffer[1].t0.write(|w| w.id().frame_id(FrameId::Standard(0b000_0100_1000)).rtr().transmit_data_frame());
+        mr.tx_buffer[1].t0.write(|w| w.id().frame_id(FrameId::new_standard(0b000_0100_1000).unwrap()).rtr().transmit_data_frame());
         unsafe { mr.tx_buffer[1].t1.write(|w| w.dlc().bits(4)) };
 
         //mr.tx_buffer[2].data[0].set(0x55aa55aa);
-        mr.tx_buffer[0].t0.write(|w| w.id().frame_id(FrameId::Standard(0x00_01)).rtr().transmit_data_frame());
+        mr.tx_buffer[0].t0.write(|w| w.id().frame_id(FrameId::new_standard(0x00_01).unwrap()).rtr().transmit_data_frame());
         unsafe { mr.tx_buffer[0].t1.write(|w| w.dlc().bits(4)) };
     }
 }
+/// Unfortunately there doesn't seem to be a good way to see what other instances are using
+/// Probably need to keep pointers to other FDCANs, different MCUs have different amount of them,
+/// code will quickly become ugly... Several instances using the same RAM seems to be convinient for redundancy,
+/// not if you need to build a gateway for example.
+pub enum SlotState {
+    /// No pending bit set, safe to do anything.
+    Empty,
+    /// Pending bit set, but there are other slots pending with higher priority (lower id), should be safe to swap slots if done fast enough.
+    Queued,
+    /// Highest priority slot for this CAN instance, meaning it is probably touched by the hw right now.
+    AccessInProgress,
+    /// Not used right now
+    UsedByOtherInstance
+}
+
 pub trait ClassicalCan {
     unsafe fn regs(&self) -> *const RegisterBlock;
+    unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2];
 
     fn total_error_count(&self) -> u8 {
         unsafe { (*self.regs()).ecr.read().cel().bits() }
@@ -489,6 +501,63 @@ pub trait ClassicalCan {
             _ => unreachable!()
         }
     }
+    fn slot_count() -> usize {
+        3
+    }
+    fn lowest_queued_id(&self) -> Option<FrameId> {
+        let mut lowest_id = None;
+        let trp_this_instance = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
+        let mr = &MessageRam::get();
+        for i in 0..=2 {
+            let mask = 0b1u8 << i;
+            if trp_this_instance & mask != 0 {
+                let id = mr.tx_buffer[i].t0.read().id().frame_id();
+                if lowest_id.is_none() {
+                    lowest_id = Some(id);
+                } else if id < lowest_id.unwrap() {
+                    lowest_id = Some(id);
+                }
+            }
+        }
+        lowest_id
+    }
+    fn slot_state(&self, idx: usize) -> Option<SlotState> {
+        if idx < Self::slot_count() {
+            use SlotState::*;
+            let mask = 0b1u8 << idx;
+            let trp_this_instance = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
+            if trp_this_instance & mask != 0 { // Used at least by this instance
+                let mr = &MessageRam::get();
+                let id = mr.tx_buffer[idx].t0.read().id().frame_id();
+                let lowest_id = self.lowest_queued_id();
+                if lowest_id.is_none() {
+                    Some(Queued)
+                } else if id == lowest_id.unwrap() {
+                    Some(AccessInProgress)
+                } else {
+                    Some(Queued)
+                }
+            } else {
+                unsafe {
+                    for instance in self.aliased_instances().iter() {
+                        if *instance != core::ptr::null() {
+                            let trp_other = ((**instance).txbrp.read().trp().bits() & 0b111) as u8;
+                            if mask & trp_other != 0 {
+                                return Some(UsedByOtherInstance);
+                            }
+                        }
+                    }
+                    return Some(Empty);
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    fn put_frame(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 
     unsafe fn ll<F: FnMut(*const RegisterBlock)>(&mut self, mut f: F) {
         f(self.regs());
@@ -500,7 +569,9 @@ impl ClassicalCan for ClassicalCanInstance {
         self.regs
     }
 
-
+    unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2] {
+        [self.regs2, self.regs3]
+    }
 }
 /// Entry point for the CAN bus initialization
 pub struct CanController {
@@ -623,7 +694,13 @@ macro_rules! can {
                 // Transition to normal state
                 can.cccr.modify(|_, w| w.init().clear_bit());
                 checked_wait_or!(can.cccr.read().init().bit_is_set(), (Error::InitFail, can, pins));
-                Ok((ClassicalCanInstance { regs: $CANX::ptr(), instance: $CanInstanceNumber }, CanPinsToken { pins }))
+
+                let (regs2, regs3) = match $CanInstanceNumber {
+                    CanInstanceNumber::Fdcan1 => (FDCAN2::ptr(), FDCAN3::ptr()),
+                    CanInstanceNumber::Fdcan2 => (FDCAN1::ptr(), FDCAN3::ptr()),
+                    CanInstanceNumber::Fdcan3 => (FDCAN1::ptr(), FDCAN2::ptr()),
+                };
+                Ok((ClassicalCanInstance { regs: $CANX::ptr(), instance: $CanInstanceNumber, regs2, regs3 }, CanPinsToken { pins }))
             }
         }
 

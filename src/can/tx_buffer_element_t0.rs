@@ -1,3 +1,5 @@
+use vhrdcan::id::{FrameId, StandardId, ExtendedId};
+
 #[doc = r"Value read from the register"]
 pub struct R {
     bits: u32,
@@ -230,7 +232,6 @@ pub struct IDR {
     is_extended: bool,
     bits: u32,
 }
-use super::FrameId;
 impl IDR {
     #[doc = r"Value of the field as raw bits"]
     #[inline(always)]
@@ -239,9 +240,9 @@ impl IDR {
     }
     pub fn frame_id(&self) -> FrameId {
         if self.is_extended {
-            FrameId::Extended(self.bits)
+            unsafe { FrameId::Extended(ExtendedId::new_unchecked(self.bits)) }
         } else {
-            FrameId::Standard(self.bits as u16)
+            unsafe { FrameId::Standard(StandardId::new_unchecked(self.bits as u16)) } // correct, shifted below
         }
     }
 }
@@ -268,8 +269,8 @@ impl<'a> IDW<'a> {
     }
     pub fn frame_id(self, value: FrameId) -> &'a mut W {
         match value {
-            FrameId::Standard(sid) => self.standard_id(sid),
-            FrameId::Extended(eid) => self.extended_id(eid),
+            FrameId::Standard(sid) => self.standard_id(sid.id()),
+            FrameId::Extended(eid) => self.extended_id(eid.id()),
         }
     }
 }
