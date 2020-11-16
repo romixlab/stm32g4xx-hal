@@ -312,31 +312,32 @@ macro_rules! gpio {
                     }
 
                     /// Configures the pin as external trigger
-                    pub fn listen(self, edge: SignalEdge, syscfg: &mut SYSCFG, exti: &mut EXTI) -> $PXi<Input<PullDown>> {
-                        let offset = 2 * $i;
-                        unsafe {
-                            &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
-                                w.bits(r.bits() & !(0b11 << offset))
-                            });
-                            &(*$GPIOX::ptr()).moder.modify(|r, w| {
-                                w.bits(r.bits() & !(0b11 << offset))
-                            })
-                        };
-                        let offset = ($i % 4) * 8;
+                    pub fn listen(self, edge: SignalEdge, syscfg: &mut SYSCFG, exti: &mut EXTI, rcc: &mut Rcc) -> $PXi<Input<PullDown>> {
+                        //let offset = 2 * $i;
+                        // unsafe {
+                        //     &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
+                        //         w.bits(r.bits() & !(0b11 << offset))
+                        //     });
+                        //     &(*$GPIOX::ptr()).moder.modify(|r, w| {
+                        //         w.bits(r.bits() & !(0b11 << offset))
+                        //     })
+                        // };
+                        rcc.rb.apb2enr.modify(|_, w| w.syscfgen().set_bit());
+                        let offset = ($i % 4) * 4;
                         let mask = $Pxn << offset;
-                        let reset = !(0xff << offset);
+                        let reset = !(0xf << offset);
                         match $i as u8 {
                             0..=3   => syscfg.exticr1.modify(|r, w| unsafe {
-                                w.bits(r.bits() & reset | mask)
+                                w.bits((r.bits() & reset) | mask)
                             }),
                             4..=7  => syscfg.exticr2.modify(|r, w| unsafe {
-                                w.bits(r.bits() & reset | mask)
+                                w.bits((r.bits() & reset) | mask)
                             }),
                             8..=11 => syscfg.exticr3.modify(|r, w| unsafe {
-                                w.bits(r.bits() & reset | mask)
+                                w.bits((r.bits() & reset) | mask)
                             }),
                             12..=15 => syscfg.exticr4.modify(|r, w| unsafe {
-                                w.bits(r.bits() & reset | mask)
+                                w.bits((r.bits() & reset) | mask)
                             }),
                             _ => unreachable!(),
                         }
