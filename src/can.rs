@@ -109,6 +109,13 @@ pub struct RxFifoElement {
     pub r1: RxFifoElementR1,
     pub data: [vcell::VolatileCell<u32>; 16],
 }
+impl RxFifoElement {
+    unsafe fn data(&self) -> &[u8] {
+        let p = (self as *const _ as *const u8).offset(8);
+        let dlc = self.r1.read().dlc().bits() as usize;
+        core::slice::from_raw_parts(p, dlc)
+    }
+}
 
 #[repr(C)]
 pub struct TxEventFifoElementE0 {
@@ -177,7 +184,9 @@ pub enum Error {
     ResetFail,
     WriteUnlockFail,
     IncorrectRccConfig,
-    InitFail
+    InitFail,
+    NoSlotsAvailable,
+    WrongFrameLength,
 }
 
 #[derive(Copy, Clone)]
@@ -319,6 +328,7 @@ pub struct ProtocolStatus(pub crate::pac::fdcan::psr::R);
 use core::fmt;
 use crate::can::standart_message_id_filter::FilterType;
 use core::marker::PhantomData;
+use vhrdcan::{Frame, };
 
 impl fmt::Debug for ProtocolStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -405,173 +415,226 @@ macro_rules! checked_wait_or {
     };
 }
 
+#[derive(Copy, Clone)]
 pub enum CanInstanceNumber {
     Fdcan1 = 0,
     Fdcan2 = 1,
-    Fdcan3 = 2
+    Fdcan3 = 2,
 }
-
+impl CanInstanceNumber {
+    pub fn mask(&self) -> u8 {
+        1 << (*self as u8)
+    }
+    pub fn instance_number(&self) -> usize {
+        *self as usize
+    }
+}
 /// CAN instance with erased types
 pub struct ClassicalCanInstance {
     regs: *const RegisterBlock,
     instance: CanInstanceNumber,
-    regs2: *const RegisterBlock,
-    regs3: *const RegisterBlock
+    // regs2: *const RegisterBlock,
+    // regs3: *const RegisterBlock
 }
 unsafe impl Send for ClassicalCanInstance {}
 impl ClassicalCanInstance {
-    pub fn send(&mut self) {
+    pub fn send(&mut self, frame: &Frame) -> Result<(), Error> {
+        if frame.len() > 8 {
+            return Err(Error::WrongFrameLength);
+        }
+        if self.free_slots() == 0 {
+            return Err(Error::NoSlotsAvailable);
+        }
         let mr = &MessageRam::get();
-        for i in 0..16 {
-            mr.tx_buffer[0].data[i].set(0xdeadbeef);
-            mr.tx_buffer[1].data[i].set(0xaabbccdd);
-            mr.tx_buffer[2].data[i].set(0x55aa55aa);
+
+        let mut fours = frame.len() / 4;
+        if frame.len() % 4 != 0 {
+            fours += 1;
+        }
+        for i in 0..fours {
+            let to_copy = if (i != fours - 1) || (frame.len() % 4 == 0) {
+                4
+            } else {
+                frame.len() % 4
+            };
+            let mut fourbytes = 0u32;
+            unsafe { core::ptr::copy_nonoverlapping(
+                frame.data().as_ptr().offset(i as isize * 4),
+                &mut fourbytes as *mut _ as *mut u8,
+                to_copy
+            ); }
+            mr.tx_buffer[self.instance.instance_number()].data[i].set(fourbytes);
         }
 
-        mr.tx_buffer[2].t0.write(|w| w.id().frame_id(FrameId::new_extended(0x01_23_45_68).unwrap()).rtr().transmit_data_frame());
-        unsafe { mr.tx_buffer[2].t1.write(|w| w.dlc().bits(4)) };
+        mr.tx_buffer[self.instance.instance_number()].t0.write(|w| w.id().frame_id(frame.id()));
+        unsafe { mr.tx_buffer[self.instance.instance_number()].t1.write(|w| w.dlc().bits(frame.len() as u8)) };
+        let pend_slot_mask = self.instance.mask() as u32;
+        unsafe { self.regs_mut().txbar.write(|w| w.ar().bits(pend_slot_mask)) };
+        Ok(())
+    }
 
-        //mr.tx_buffer[1].data[0].set(0xaabbccdd);
-        mr.tx_buffer[1].t0.write(|w| w.id().frame_id(FrameId::new_standard(0b000_0100_1000).unwrap()).rtr().transmit_data_frame());
-        unsafe { mr.tx_buffer[1].t1.write(|w| w.dlc().bits(4)) };
-
-        //mr.tx_buffer[2].data[0].set(0x55aa55aa);
-        mr.tx_buffer[0].t0.write(|w| w.id().frame_id(FrameId::new_standard(0x00_01).unwrap()).rtr().transmit_data_frame());
-        unsafe { mr.tx_buffer[0].t1.write(|w| w.dlc().bits(4)) };
+    pub fn get_all<F: FnMut(FrameId, &[u8])>(&mut self, mut f: F) {
+        for _ in 0..3 {
+            let fifo_status = self.regs().rxf0s.read();
+            if fifo_status.f0fl().bits() > 0 {
+                let get_index = fifo_status.f0gi().bits();
+                let mr = &MessageRam::get();
+                let id = mr.rx_fifo_0[get_index as usize].r0.read().id().frame_id();
+                f(id, unsafe { mr.rx_fifo_0[get_index as usize].data() });
+                unsafe { self.regs().rxf0a.write(|w| w.f0ai().bits(get_index)) };
+            } else {
+                break;
+            }
+        }
     }
 }
-/// Unfortunately there doesn't seem to be a good way to see what other instances are using
-/// Probably need to keep pointers to other FDCANs, different MCUs have different amount of them,
-/// code will quickly become ugly... Several instances using the same RAM seems to be convinient for redundancy,
-/// not if you need to build a gateway for example.
-pub enum SlotState {
-    /// No pending bit set, safe to do anything.
-    Empty,
-    /// Pending bit set, but there are other slots pending with higher priority (lower id), should be safe to swap slots if done fast enough.
-    Queued,
-    /// Highest priority slot for this CAN instance, meaning it is probably touched by the hw right now.
-    AccessInProgress,
-    /// Not used right now
-    UsedByOtherInstance
-}
+// Unfortunately there doesn't seem to be a good way to see what other instances are using
+// Probably need to keep pointers to other FDCANs, different MCUs have different amount of them,
+// code will quickly become ugly... Several instances using the same RAM seems to be convinient for redundancy,
+// not if you need to build a gateway for example.
+// pub enum SlotState {
+//     /// No pending bit set, safe to do anything.
+//     Empty,
+//     /// Pending bit set, but there are other slots pending with higher priority (lower id), should be safe to swap slots if done fast enough.
+//     Queued,
+//     /// Highest priority slot for this CAN instance, meaning it is probably touched by the hw right now.
+//     AccessInProgress,
+//     /// Not used right now
+//     UsedByOtherInstance
+// }
 
 pub trait ClassicalCan {
-    unsafe fn regs(&self) -> *const RegisterBlock;
-    unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2];
+    fn regs(&self) -> &RegisterBlock;
+    unsafe fn regs_mut(&mut self) -> &mut RegisterBlock;
+    // unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2];
 
     fn total_error_count(&self) -> u8 {
-        unsafe { (*self.regs()).ecr.read().cel().bits() }
+        unsafe { self.regs().ecr.read().cel().bits() }
     }
 
     fn receive_error_counter(&self) -> u8 {
-        unsafe { (*self.regs()).ecr.read().trec().bits() }
+        unsafe { self.regs().ecr.read().trec().bits() }
     }
 
     fn transmit_error_counter(&self) -> u8 {
-        unsafe { (*self.regs()).ecr.read().tec().bits() }
+        unsafe { self.regs().ecr.read().tec().bits() }
     }
 
     fn protocol_status(&self) -> ProtocolStatus {
-        ProtocolStatus(unsafe { (*self.regs()).psr.read() })
+        ProtocolStatus(unsafe { self.regs().psr.read() })
     }
 
     fn interrupt_reason(&self) -> InterruptReason {
-        InterruptReason(unsafe { (*self.regs()).ir.read() })
+        InterruptReason(unsafe { self.regs().ir.read() })
     }
 
     fn rx_pin_state(&self) -> RxPinState {
-        if unsafe { (*self.regs()).test.read().rx().bit_is_set() } {
+        if unsafe { self.regs().test.read().rx().bit_is_set() } {
             RxPinState::Recessive
         } else {
             RxPinState::Dominant
         }
     }
 
-    fn next_queue_slot(&self) -> Option<u8> {
-        let trp = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
-        match trp {
-            0b000 => Some(0),
-            0b001 => Some(1),
-            0b010 => Some(0),
-            0b011 => Some(2),
-            0b100 => Some(0),
-            0b101 => Some(1),
-            0b110 => Some(0),
-            0b111 => None,
-            _ => unreachable!()
-        }
-    }
-    fn slot_count() -> usize {
-        3
-    }
-    fn lowest_queued_id(&self) -> Option<FrameId> {
-        let mut lowest_id = None;
-        let trp_this_instance = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
-        let mr = &MessageRam::get();
-        for i in 0..=2 {
-            let mask = 0b1u8 << i;
-            if trp_this_instance & mask != 0 {
-                let id = mr.tx_buffer[i].t0.read().id().frame_id();
-                if lowest_id.is_none() {
-                    lowest_id = Some(id);
-                } else if id < lowest_id.unwrap() {
-                    lowest_id = Some(id);
-                }
-            }
-        }
-        lowest_id
-    }
-    fn slot_state(&self, idx: usize) -> Option<SlotState> {
-        if idx < Self::slot_count() {
-            use SlotState::*;
-            let mask = 0b1u8 << idx;
-            let trp_this_instance = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
-            if trp_this_instance & mask != 0 { // Used at least by this instance
-                let mr = &MessageRam::get();
-                let id = mr.tx_buffer[idx].t0.read().id().frame_id();
-                let lowest_id = self.lowest_queued_id();
-                if lowest_id.is_none() {
-                    Some(Queued)
-                } else if id == lowest_id.unwrap() {
-                    Some(AccessInProgress)
-                } else {
-                    Some(Queued)
-                }
-            } else {
-                unsafe {
-                    for instance in self.aliased_instances().iter() {
-                        if *instance != core::ptr::null() {
-                            let trp_other = ((**instance).txbrp.read().trp().bits() & 0b111) as u8;
-                            if mask & trp_other != 0 {
-                                return Some(UsedByOtherInstance);
-                            }
-                        }
-                    }
-                    return Some(Empty);
-                }
-            }
-        } else {
-            None
-        }
-    }
+    fn free_slots(&self) -> usize;
+    // fn next_queue_slot(&self) -> Option<u8> {
+    //     let trp = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
+    //     match trp {
+    //         0b000 => Some(0),
+    //         0b001 => Some(1),
+    //         0b010 => Some(0),
+    //         0b011 => Some(2),
+    //         0b100 => Some(0),
+    //         0b101 => Some(1),
+    //         0b110 => Some(0),
+    //         0b111 => None,
+    //         _ => unreachable!()
+    //     }
+    // }
+    // fn slot_count() -> usize {
+    //     3
+    // }
+    // fn lowest_queued_id(&self) -> Option<FrameId> {
+    //     let mut lowest_id = None;
+    //     let trp_this_instance = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
+    //     let mr = &MessageRam::get();
+    //     for i in 0..=2 {
+    //         let mask = 0b1u8 << i;
+    //         if trp_this_instance & mask != 0 {
+    //             let id = mr.tx_buffer[i].t0.read().id().frame_id();
+    //             if lowest_id.is_none() {
+    //                 lowest_id = Some(id);
+    //             } else if id < lowest_id.unwrap() {
+    //                 lowest_id = Some(id);
+    //             }
+    //         }
+    //     }
+    //     lowest_id
+    // }
+    // fn slot_state(&self, idx: usize) -> Option<SlotState> {
+    //     if idx < Self::slot_count() {
+    //         use SlotState::*;
+    //         let mask = 0b1u8 << idx;
+    //         let trp_this_instance = (unsafe { (*self.regs()).txbrp.read().trp().bits() } & 0b111) as u8;
+    //         if trp_this_instance & mask != 0 { // Used at least by this instance
+    //             let mr = &MessageRam::get();
+    //             let id = mr.tx_buffer[idx].t0.read().id().frame_id();
+    //             let lowest_id = self.lowest_queued_id();
+    //             if lowest_id.is_none() {
+    //                 Some(Queued)
+    //             } else if id == lowest_id.unwrap() {
+    //                 Some(AccessInProgress)
+    //             } else {
+    //                 Some(Queued)
+    //             }
+    //         } else {
+    //             unsafe {
+    //                 for instance in self.aliased_instances().iter() {
+    //                     if *instance != core::ptr::null() {
+    //                         let trp_other = ((**instance).txbrp.read().trp().bits() & 0b111) as u8;
+    //                         if mask & trp_other != 0 {
+    //                             return Some(UsedByOtherInstance);
+    //                         }
+    //                     }
+    //                 }
+    //                 return Some(Empty);
+    //             }
+    //         }
+    //     } else {
+    //         None
+    //     }
+    // }
 
     fn put_frame(&mut self) -> Result<(), Error> {
         Ok(())
     }
 
-    unsafe fn ll<F: FnMut(*const RegisterBlock)>(&mut self, mut f: F) {
-        f(self.regs());
+    unsafe fn ll<F: FnMut(&mut RegisterBlock)>(&mut self, mut f: F) {
+        f(self.regs_mut());
     }
 }
 
 impl ClassicalCan for ClassicalCanInstance {
-    unsafe fn regs(&self) -> *const RegisterBlock {
-        self.regs
+    fn regs(&self) -> &RegisterBlock {
+        unsafe { &*self.regs }
     }
 
-    unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2] {
-        [self.regs2, self.regs3]
+    unsafe fn regs_mut(&mut self) -> &mut RegisterBlock {
+        &mut *(self.regs as *const _ as *mut RegisterBlock)
     }
+
+    fn free_slots(&self) -> usize {
+        let trp = (unsafe { self.regs().txbrp.read().trp().bits() } & 0b111) as u8;
+        if self.instance as u8 & trp != 0 {
+            0
+        } else {
+            1
+        }
+    }
+
+    // unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2] {
+    //     [self.regs2, self.regs3]
+    // }
 }
 /// Entry point for the CAN bus initialization
 pub struct CanController {
@@ -695,12 +758,12 @@ macro_rules! can {
                 can.cccr.modify(|_, w| w.init().clear_bit());
                 checked_wait_or!(can.cccr.read().init().bit_is_set(), (Error::InitFail, can, pins));
 
-                let (regs2, regs3) = match $CanInstanceNumber {
-                    CanInstanceNumber::Fdcan1 => (FDCAN2::ptr(), FDCAN3::ptr()),
-                    CanInstanceNumber::Fdcan2 => (FDCAN1::ptr(), FDCAN3::ptr()),
-                    CanInstanceNumber::Fdcan3 => (FDCAN1::ptr(), FDCAN2::ptr()),
-                };
-                Ok((ClassicalCanInstance { regs: $CANX::ptr(), instance: $CanInstanceNumber, regs2, regs3 }, CanPinsToken { pins }))
+                // let (regs2, regs3) = match $CanInstanceNumber {
+                //     CanInstanceNumber::Fdcan1 => (FDCAN2::ptr(), FDCAN3::ptr()),
+                //     CanInstanceNumber::Fdcan2 => (FDCAN1::ptr(), FDCAN3::ptr()),
+                //     CanInstanceNumber::Fdcan3 => (FDCAN1::ptr(), FDCAN2::ptr()),
+                // };
+                Ok((ClassicalCanInstance { regs: $CANX::ptr(), instance: $CanInstanceNumber }, CanPinsToken { pins }))
             }
         }
 
