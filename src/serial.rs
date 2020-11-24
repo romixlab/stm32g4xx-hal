@@ -4,7 +4,7 @@ use crate::gpio::{gpioa::*, gpiob::*, gpioc::*, gpiod::*};
 use crate::gpio::{AltFunction, DefaultMode};
 use crate::prelude::*;
 use crate::rcc::Rcc;
-use crate::stm32::{LPUART, USART1, USART2, USART3, USART4};
+use crate::stm32::{USART1, USART2, USART3};
 use crate::time::Bps;
 use hal;
 use nb::block;
@@ -162,7 +162,7 @@ where
 
 macro_rules! uart {
     ($USARTX:ident,
-        $usartX:ident, $apbXenr:ident, $usartXen:ident, $clk_mul:expr,
+        $usartX:ident, $apbXenr:ident, $apbXrstr:ident, $usartXen:ident, $usartXrst:ident, $clk_mul:expr,
         tx: [ $(($PTX:ty, $TAF:expr),)+ ],
         rx: [ $(($PRX:ty, $RAF:expr),)+ ],
     ) => {
@@ -213,8 +213,14 @@ macro_rules! uart {
                 rx.setup();
 
                 // Enable clock for USART
+                // rcc.rb.$apbXenr.modify(|_, w| w.$usartXen().set_bit());
+                // Enable clock & reset
                 rcc.rb.$apbXenr.modify(|_, w| w.$usartXen().set_bit());
-                let clk = rcc.clocks.apb_clk.0 as u64;
+                rcc.rb.$apbXrstr.modify(|_, w| w.$usartXrst().set_bit());
+                rcc.rb.$apbXrstr.modify(|_, w| w.$usartXrst().clear_bit());
+                // Select clock source
+
+                let clk = rcc.clocks.apb2_clk.0 as u64;
                 let bdr = config.baudrate.0 as u64;
                 let div = ($clk_mul * clk) / bdr;
                 usart
@@ -331,22 +337,22 @@ macro_rules! uart {
     }
 }
 
-uart!(
-    LPUART, lpuart, apbenr1, lpuart1en, 256,
-    tx: [
-        (PA2<DefaultMode>, AltFunction::AF6),
-        (PB11<DefaultMode>, AltFunction::AF1),
-        (PC1<DefaultMode>, AltFunction::AF1),
-    ],
-    rx: [
-        (PA3<DefaultMode>, AltFunction::AF6),
-        (PB10<DefaultMode>, AltFunction::AF1),
-        (PC0<DefaultMode>, AltFunction::AF1),
-    ],
-);
+// uart!(
+//     LPUART, lpuart, apbenr1, lpuart1en, 256,
+//     tx: [
+//         (PA2<DefaultMode>, AltFunction::AF6),
+//         (PB11<DefaultMode>, AltFunction::AF1),
+//         (PC1<DefaultMode>, AltFunction::AF1),
+//     ],
+//     rx: [
+//         (PA3<DefaultMode>, AltFunction::AF6),
+//         (PB10<DefaultMode>, AltFunction::AF1),
+//         (PC0<DefaultMode>, AltFunction::AF1),
+//     ],
+// );
 
 uart!(
-    USART1, usart1, apbenr2, usart1en, 1,
+    USART1, usart1, apb2enr, apb2rstr, usart1en, usart1rst, 1,
     tx: [
         (PA9<DefaultMode>, AltFunction::AF1),
         (PB6<DefaultMode>, AltFunction::AF0),
@@ -359,49 +365,49 @@ uart!(
     ],
 );
 
-uart!(
-    USART2, usart2, apbenr1, usart2en, 1,
-    tx: [
-        (PA2<DefaultMode>, AltFunction::AF1),
-        (PA14<DefaultMode>, AltFunction::AF1),
-        (PD5<DefaultMode>, AltFunction::AF0),
-    ],
-    rx: [
-        (PA3<DefaultMode>, AltFunction::AF1),
-        (PA15<DefaultMode>, AltFunction::AF1),
-        (PD6<DefaultMode>, AltFunction::AF0),
-    ],
-);
+// uart!(
+//     USART2, usart2, apbenr1, usart2en, 1,
+//     tx: [
+//         (PA2<DefaultMode>, AltFunction::AF1),
+//         (PA14<DefaultMode>, AltFunction::AF1),
+//         (PD5<DefaultMode>, AltFunction::AF0),
+//     ],
+//     rx: [
+//         (PA3<DefaultMode>, AltFunction::AF1),
+//         (PA15<DefaultMode>, AltFunction::AF1),
+//         (PD6<DefaultMode>, AltFunction::AF0),
+//     ],
+// );
+//
+// uart!(
+//     USART3, usart3, apbenr1, usart3en, 1,
+//     tx: [
+//         (PA5<DefaultMode>, AltFunction::AF4),
+//         (PB2<DefaultMode>, AltFunction::AF4),
+//         (PB8<DefaultMode>, AltFunction::AF4),
+//         (PB10<DefaultMode>, AltFunction::AF4),
+//         (PC4<DefaultMode>, AltFunction::AF1),
+//         (PC10<DefaultMode>, AltFunction::AF1),
+//         (PD8<DefaultMode>, AltFunction::AF1),
+//     ],
+//     rx: [
+//         (PB0<DefaultMode>, AltFunction::AF4),
+//         (PB9<DefaultMode>, AltFunction::AF4),
+//         (PB11<DefaultMode>, AltFunction::AF4),
+//         (PC5<DefaultMode>, AltFunction::AF1),
+//         (PC11<DefaultMode>, AltFunction::AF1),
+//         (PD9<DefaultMode>, AltFunction::AF1),
+//     ],
+// );
 
-uart!(
-    USART3, usart3, apbenr1, usart3en, 1,
-    tx: [
-        (PA5<DefaultMode>, AltFunction::AF4),
-        (PB2<DefaultMode>, AltFunction::AF4),
-        (PB8<DefaultMode>, AltFunction::AF4),
-        (PB10<DefaultMode>, AltFunction::AF4),
-        (PC4<DefaultMode>, AltFunction::AF1),
-        (PC10<DefaultMode>, AltFunction::AF1),
-        (PD8<DefaultMode>, AltFunction::AF1),
-    ],
-    rx: [
-        (PB0<DefaultMode>, AltFunction::AF4),
-        (PB9<DefaultMode>, AltFunction::AF4),
-        (PB11<DefaultMode>, AltFunction::AF4),
-        (PC5<DefaultMode>, AltFunction::AF1),
-        (PC11<DefaultMode>, AltFunction::AF1),
-        (PD9<DefaultMode>, AltFunction::AF1),
-    ],
-);
-
-uart!(
-    USART4, usart4, apbenr1, usart4en, 1,
-    tx: [
-        (PA0<DefaultMode>, AltFunction::AF4),
-        (PC10<DefaultMode>, AltFunction::AF1),
-    ],
-    rx: [
-        (PC11<DefaultMode>, AltFunction::AF1),
-        (PA1<DefaultMode>, AltFunction::AF4),
-    ],
-);
+// uart!(
+//     USART4, usart4, apbenr1, usart4en, 1,
+//     tx: [
+//         (PA0<DefaultMode>, AltFunction::AF4),
+//         (PC10<DefaultMode>, AltFunction::AF1),
+//     ],
+//     rx: [
+//         (PC11<DefaultMode>, AltFunction::AF1),
+//         (PA1<DefaultMode>, AltFunction::AF4),
+//     ],
+// );
