@@ -187,6 +187,7 @@ pub enum Error {
     InitFail,
     NoSlotsAvailable,
     WrongFrameLength,
+    TfqpiIndexInvalid, // 3 elements available but datasheet says that TFQPI can be 3
 }
 
 #[derive(Copy, Clone)]
@@ -305,6 +306,12 @@ pub enum TransmitPause {
     Disabled
 }
 
+#[derive(PartialEq)]
+pub enum TxBufferMode {
+    Queue,
+    Fifo
+}
+
 pub struct BitTiming {
     ntseg1: u8,
     ntseg2: u8,
@@ -324,6 +331,12 @@ impl BitTiming {
 }
 
 pub struct ProtocolStatus(pub crate::pac::fdcan::psr::R);
+
+impl ProtocolStatus {
+    pub fn is_bus_off(&self) -> bool {
+        self.0.bo().bit_is_set()
+    }
+}
 
 use core::fmt;
 use crate::can::standart_message_id_filter::FilterType;
@@ -363,7 +376,7 @@ impl fmt::Debug for ProtocolStatus {
 }
 
 
-pub struct InterruptReason(crate::pac::fdcan::ir::R);
+pub struct InterruptReason(pub crate::pac::fdcan::ir::R);
 
 impl fmt::Debug for InterruptReason {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -433,6 +446,7 @@ impl CanInstanceNumber {
 pub struct ClassicalCanInstance {
     regs: *const RegisterBlock,
     instance: CanInstanceNumber,
+    txbuffer_mode: TxBufferMode,
     // regs2: *const RegisterBlock,
     // regs3: *const RegisterBlock
 }
@@ -445,7 +459,20 @@ impl ClassicalCanInstance {
         if self.free_slots() == 0 {
             return Err(Error::NoSlotsAvailable);
         }
+        let txfqs = self.regs().txfqs.read();
+        if txfqs.tfqpi().bits() > 2 {
+            return Err(Error::TfqpiIndexInvalid);
+        }
         let mr = &MessageRam::get();
+
+        let tx_buffer_put_index = match self.txbuffer_mode {
+            TxBufferMode::Queue => {
+                self.instance.instance_number()
+            },
+            TxBufferMode::Fifo => {
+                txfqs.tfqpi().bits() as usize
+            }
+        };
 
         let mut fours = frame.len() / 4;
         if frame.len() % 4 != 0 {
@@ -463,13 +490,21 @@ impl ClassicalCanInstance {
                 &mut fourbytes as *mut _ as *mut u8,
                 to_copy
             ); }
-            mr.tx_buffer[self.instance.instance_number()].data[i].set(fourbytes);
+            mr.tx_buffer[tx_buffer_put_index].data[i].set(fourbytes);
         }
 
-        mr.tx_buffer[self.instance.instance_number()].t0.write(|w| w.id().frame_id(frame.id()));
-        unsafe { mr.tx_buffer[self.instance.instance_number()].t1.write(|w| w.dlc().bits(frame.len() as u8)) };
-        let pend_slot_mask = self.instance.mask() as u32;
+        mr.tx_buffer[tx_buffer_put_index].t0.write(|w| w.id().frame_id(frame.id()));
+        unsafe { mr.tx_buffer[tx_buffer_put_index].t1.write(|w| w.dlc().bits(frame.len() as u8)) };
+        let pend_slot_mask = match self.txbuffer_mode {
+            TxBufferMode::Queue => {
+                self.instance.mask() as u32
+            },
+            TxBufferMode::Fifo => {
+                1 << txfqs.tfqpi().bits()
+            }
+        };
         unsafe { self.regs_mut().txbar.write(|w| w.ar().bits(pend_slot_mask)) };
+
         Ok(())
     }
 
@@ -624,12 +659,20 @@ impl ClassicalCan for ClassicalCanInstance {
     }
 
     fn free_slots(&self) -> usize {
-        let trp = (unsafe { self.regs().txbrp.read().trp().bits() } & 0b111) as u8;
-        if self.instance as u8 & trp != 0 {
-            0
-        } else {
-            1
+        match self.txbuffer_mode {
+            TxBufferMode::Queue => { // 1 slot per FDCAN instance for now, probably can be improved
+                let trp = (unsafe { self.regs().txbrp.read().trp().bits() } & 0b111) as u8;
+                if self.instance as u8 & trp != 0 {
+                    0
+                } else {
+                    1
+                }
+            },
+            TxBufferMode::Fifo => {
+                self.regs().txfqs.read().tffl().bits() as usize
+            }
         }
+
     }
 
     // unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2] {
@@ -698,6 +741,7 @@ macro_rules! can {
                 mode: Mode,
                 retransmission: Retransmission,
                 transmit_pause: TransmitPause,
+                txbuffer_mode: TxBufferMode,
                 clock_div: ClockDiv,
                 bit_timing: BitTiming,
             ) -> Result<(ClassicalCanInstance, CanPinsToken<PINS>), (Error, $CANX, PINS)>
@@ -723,7 +767,9 @@ macro_rules! can {
                 );
                 // Enable queue mode
                 //can.txbc.modify(|_, w| w.tfqm().set_bit()); // Wrong PAL
-                can.txbc.write(|w| unsafe { w.bits(0b1 << 24) });
+                if txbuffer_mode == TxBufferMode::Queue {
+                    can.txbc.write(|w| unsafe { w.bits(0b1 << 24) });
+                }
                 // Calculate prescaler & apply bit timings
                 // sync_seg = 1tq
                 // bs1 = prop_seg + phseg1 = 1..16tq
@@ -763,7 +809,11 @@ macro_rules! can {
                 //     CanInstanceNumber::Fdcan2 => (FDCAN1::ptr(), FDCAN3::ptr()),
                 //     CanInstanceNumber::Fdcan3 => (FDCAN1::ptr(), FDCAN2::ptr()),
                 // };
-                Ok((ClassicalCanInstance { regs: $CANX::ptr(), instance: $CanInstanceNumber }, CanPinsToken { pins }))
+                Ok((ClassicalCanInstance {
+                    regs: $CANX::ptr(),
+                    instance: $CanInstanceNumber,
+                    txbuffer_mode
+                }, CanPinsToken { pins }))
             }
         }
 
