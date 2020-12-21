@@ -16,7 +16,7 @@ cortex-m = "0.6.1"
 nb = "0.1.2"
 stm32g4 = "0.8.0"
 vcell = "0.1.2"
-vhrdcan = { path = "../vhrdcan" }
+vhrdcan = { git = "https://github.com/vhrdtech/vhrdcan.git" }
 
 [dependencies.bare-metal]
 features = ["const-fn"]
