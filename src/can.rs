@@ -1,19 +1,19 @@
 use core::ops::Deref;
 
 use crate::gpio::{
-    gpioa::{ PA8, PA11, PA12, PA15 },
-    gpiob::{ PB3, PB4, PB5, PB6, PB8, PB9 },
-    gpiod::{ PD0, PD1, },
+    gpioa::{PA11, PA12, PA15, PA8},
+    gpiob::{PB3, PB4, PB5, PB6, PB8, PB9},
+    gpiod::{PD0, PD1},
     //gpioe::{ PE0 }
 };
 use crate::gpio::{AltFunction, DefaultMode};
-use crate::pac::{FDCAN1, FDCAN2, FDCAN3};
 use crate::pac::fdcan::RegisterBlock;
+use crate::pac::FDCAN1;
 use crate::rcc::Rcc;
 use cortex_m::peripheral::DWT;
 
-use vcell::VolatileCell;
 use crate::time::Hertz;
+use vcell::VolatileCell;
 use vhrdcan::id::FrameId;
 
 /// Rx FIFO 0 and 1 R0 register
@@ -24,11 +24,11 @@ pub mod rx_fifo_element_r1;
 pub mod tx_buffer_element_t0;
 pub mod tx_buffer_element_t1;
 
-pub mod tx_event_fifo_element_e0;
-pub mod tx_event_fifo_element_e1;
-pub mod standart_message_id_filter;
 pub mod extended_message_id_filter_f0;
 pub mod extended_message_id_filter_f1;
+pub mod standart_message_id_filter;
+pub mod tx_event_fifo_element_e0;
+pub mod tx_event_fifo_element_e1;
 
 struct MessageRam {
     _marker: PhantomData<*const ()>,
@@ -47,13 +47,13 @@ struct MessageRamBlock {
     /// TX event FIFO x 3 x 8 bytes each, offset = 608 bytes (0x4000a660)
     tx_event_fifo: [TxEventFifoElement; 3],
     /// TX buffer x 3 x 72 bytes each, offset = 632 bytes (0x4000a678), end = 848
-    tx_buffer: [TxBufferElement; 3]
+    tx_buffer: [TxBufferElement; 3],
 }
 
 impl MessageRam {
     pub fn get() -> Self {
         MessageRam {
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
     #[doc = r"Returns a pointer to the RAM block"]
@@ -73,35 +73,37 @@ impl Deref for MessageRam {
 const SIZE_OF_MESSAGE_RAM: usize = 848;
 fn _check_message_ram_size() {
     // If that doesn't compile, message ram size is incorrect
-    unsafe { core::mem::transmute::<MessageRamBlock, [u8; SIZE_OF_MESSAGE_RAM]>(panic!()); }
+    unsafe {
+        core::mem::transmute::<MessageRamBlock, [u8; SIZE_OF_MESSAGE_RAM]>(panic!());
+    }
 }
 
 #[repr(C)]
 #[doc = "Standard message ID Filter element, up to 28 of such filters can be configured"]
 pub struct StandartMessageIdFilter {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
 pub struct ExtendedMessageIdFilterF0 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
 pub struct ExtendedMessageIdFilterF1 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
-pub struct ExtendedMessageIdFilter{
+pub struct ExtendedMessageIdFilter {
     pub f0: ExtendedMessageIdFilterF0,
     pub f1: ExtendedMessageIdFilterF1,
 }
 
 #[repr(C)]
 pub struct RxFifoElementR0 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
 pub struct RxFifoElementR1 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
 pub struct RxFifoElement {
@@ -119,11 +121,11 @@ impl RxFifoElement {
 
 #[repr(C)]
 pub struct TxEventFifoElementE0 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
 pub struct TxEventFifoElementE1 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 
 #[repr(C)]
@@ -134,14 +136,14 @@ pub struct TxEventFifoElement {
 
 #[repr(C)]
 pub struct TxBufferElementT0 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
 pub struct TxBufferElementT1 {
-    register: vcell::VolatileCell<u32>
+    register: vcell::VolatileCell<u32>,
 }
 #[repr(C)]
-pub struct TxBufferElement{
+pub struct TxBufferElement {
     pub t0: TxBufferElementT0,
     pub t1: TxBufferElementT1,
     pub data: [vcell::VolatileCell<u32>; 16],
@@ -194,25 +196,25 @@ pub enum Error {
 pub enum ClockSource {
     Hse(Hertz),
     Pllq,
-    Pclk
+    Pclk,
 }
 impl Into<u8> for ClockSource {
     fn into(self) -> u8 {
         use ClockSource::*;
         match self {
             Hse(_) => 0b00,
-            Pllq =>   0b01,
-            Pclk =>   0b10
+            Pllq => 0b01,
+            Pclk => 0b10,
         }
     }
 }
 
 pub enum ClockDiv {
-    Div1 =  0b0000,
-    Div2 =  0b0001,
-    Div4 =  0b0010,
-    Div6 =  0b0011,
-    Div8 =  0b0100,
+    Div1 = 0b0000,
+    Div2 = 0b0001,
+    Div4 = 0b0010,
+    Div6 = 0b0011,
+    Div8 = 0b0100,
     Div10 = 0b0101,
     Div12 = 0b0110,
     Div14 = 0b0111,
@@ -223,7 +225,7 @@ pub enum ClockDiv {
     Div24 = 0b1100,
     Div26 = 0b1101,
     Div28 = 0b1110,
-    Div30 = 0b1111
+    Div30 = 0b1111,
 }
 
 pub trait Pins<CAN> {
@@ -239,9 +241,9 @@ pub trait PinRx<CAN> {
 }
 
 impl<CAN, CAN_TX, CAN_RX> Pins<CAN> for (CAN_TX, CAN_RX)
-    where
-        CAN_TX: PinTx<CAN>,
-        CAN_RX: PinRx<CAN>,
+where
+    CAN_TX: PinTx<CAN>,
+    CAN_RX: PinRx<CAN>,
 {
     fn setup(&self) {
         self.0.setup();
@@ -269,7 +271,7 @@ pub enum Mode {
     /// Treat own messages as received, messages can be seen on TX pin, RX ignored.
     ExternalLoopBack,
     /// Treat own messages as received and do not disturb the bus (TX always recessive, RX ignored).
-    InternalLoopBack
+    InternalLoopBack,
 }
 
 impl Mode {
@@ -279,7 +281,7 @@ impl Mode {
             Normal => false,
             BusMonitoring => false,
             ExternalLoopBack => true,
-            InternalLoopBack => true
+            InternalLoopBack => true,
         }
     }
 
@@ -289,7 +291,7 @@ impl Mode {
             Normal => false,
             BusMonitoring => true,
             ExternalLoopBack => false,
-            InternalLoopBack => true
+            InternalLoopBack => true,
         }
     }
 }
@@ -297,26 +299,26 @@ impl Mode {
 #[derive(PartialEq)]
 pub enum Retransmission {
     Enabled,
-    Disabled
+    Disabled,
 }
 
 #[derive(PartialEq)]
 pub enum TransmitPause {
     Enabled,
-    Disabled
+    Disabled,
 }
 
 #[derive(PartialEq)]
 pub enum TxBufferMode {
     Queue,
-    Fifo
+    Fifo,
 }
 
 pub struct BitTiming {
     ntseg1: u8,
     ntseg2: u8,
     nsjw: u8,
-    baudrate: u32
+    baudrate: u32,
 }
 
 impl BitTiming {
@@ -325,7 +327,7 @@ impl BitTiming {
             ntseg1: 57,
             ntseg2: 20,
             nsjw: 20,
-            baudrate: 1_000_000
+            baudrate: 1_000_000,
         }
     }
 }
@@ -338,75 +340,156 @@ impl ProtocolStatus {
     }
 }
 
-use core::fmt;
 use crate::can::standart_message_id_filter::FilterType;
+use core::fmt;
 use core::marker::PhantomData;
-use vhrdcan::{Frame, };
+use vhrdcan::Frame;
 
 impl fmt::Debug for ProtocolStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "PSR(Flags:");
-        if self.0.bo().bit_is_set() { write!(f, "BO|"); }
-        if self.0.ew().bit_is_set() { write!(f, "EW|"); }
-        if self.0.ep().bit_is_set() { write!(f, "EP|"); }
+        if self.0.bo().bit_is_set() {
+            write!(f, "BO|");
+        }
+        if self.0.ew().bit_is_set() {
+            write!(f, "EW|");
+        }
+        if self.0.ep().bit_is_set() {
+            write!(f, "EP|");
+        }
         let act = (self.0.bits() & 0b11000) as u8 >> 3;
 
         write!(f, " Status:");
         match act {
-            0b00 => { write!(f, "Sync"); },
-            0b01 => { write!(f, "Idle"); },
-            0b10 => { write!(f, "Rx"); },
-            0b11 => { write!(f, "Tx"); },
-            _ => { unreachable!() }
+            0b00 => {
+                write!(f, "Sync");
+            }
+            0b01 => {
+                write!(f, "Idle");
+            }
+            0b10 => {
+                write!(f, "Rx");
+            }
+            0b11 => {
+                write!(f, "Tx");
+            }
+            _ => {
+                unreachable!()
+            }
         }
         write!(f, " LEC:");
         match self.0.lec().bits() {
-            0b000 => { write!(f, "NoError|"); },
-            0b001 => { write!(f, "Stuff|"); },
-            0b010 => { write!(f, "Form|"); },
-            0b011 => { write!(f, "Ack|"); },
-            0b100 => { write!(f, "Bit1|"); },
-            0b101 => { write!(f, "Bit0|"); },
-            0b110 => { write!(f, "CRC|"); },
-            0b111 => { write!(f, "NoChange|"); },
-            _ => { unreachable!() },
+            0b000 => {
+                write!(f, "NoError|");
+            }
+            0b001 => {
+                write!(f, "Stuff|");
+            }
+            0b010 => {
+                write!(f, "Form|");
+            }
+            0b011 => {
+                write!(f, "Ack|");
+            }
+            0b100 => {
+                write!(f, "Bit1|");
+            }
+            0b101 => {
+                write!(f, "Bit0|");
+            }
+            0b110 => {
+                write!(f, "CRC|");
+            }
+            0b111 => {
+                write!(f, "NoChange|");
+            }
+            _ => {
+                unreachable!()
+            }
         }
         write!(f, ")")
     }
 }
-
 
 pub struct InterruptReason(pub crate::pac::fdcan::ir::R);
 
 impl fmt::Debug for InterruptReason {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "IR(");
-        if self.0.ara().bit_is_set() { write!(f, "ARA|"); }
-        if self.0.ped().bit_is_set() { write!(f, "PED|"); }
-        if self.0.pea().bit_is_set() { write!(f, "PEA|"); }
-        if self.0.wdi().bit_is_set() { write!(f, "WDI|"); }
-        if self.0.bo().bit_is_set() { write!(f, "BO|"); }
-        if self.0.ew().bit_is_set() { write!(f, "EW|"); }
-        if self.0.ep().bit_is_set() { write!(f, "EP|"); }
-        if self.0.elo().bit_is_set() { write!(f, "ELO|"); }
-        if self.0.too().bit_is_set() { write!(f, "TOO|"); }
-        if self.0.mraf().bit_is_set() { write!(f, "MRAF|"); }
-        if self.0.tsw().bit_is_set() { write!(f, "TSW|"); }
-        if self.0.tefl().bit_is_set() { write!(f, "TEFL|"); }
-        if self.0.teff().bit_is_set() { write!(f, "TEFF|"); }
-        if self.0.tefn().bit_is_set() { write!(f, "TEFN|"); }
-        if self.0.tfe().bit_is_set() { write!(f, "TFE|"); }
-        if self.0.tcf().bit_is_set() { write!(f, "TCF|"); }
-        if self.0.tc().bit_is_set() { write!(f, "TC|"); }
-        if self.0.hpm().bit_is_set() { write!(f, "HPM|"); }
+        if self.0.ara().bit_is_set() {
+            write!(f, "ARA|");
+        }
+        if self.0.ped().bit_is_set() {
+            write!(f, "PED|");
+        }
+        if self.0.pea().bit_is_set() {
+            write!(f, "PEA|");
+        }
+        if self.0.wdi().bit_is_set() {
+            write!(f, "WDI|");
+        }
+        if self.0.bo().bit_is_set() {
+            write!(f, "BO|");
+        }
+        if self.0.ew().bit_is_set() {
+            write!(f, "EW|");
+        }
+        if self.0.ep().bit_is_set() {
+            write!(f, "EP|");
+        }
+        if self.0.elo().bit_is_set() {
+            write!(f, "ELO|");
+        }
+        if self.0.too().bit_is_set() {
+            write!(f, "TOO|");
+        }
+        if self.0.mraf().bit_is_set() {
+            write!(f, "MRAF|");
+        }
+        if self.0.tsw().bit_is_set() {
+            write!(f, "TSW|");
+        }
+        if self.0.tefl().bit_is_set() {
+            write!(f, "TEFL|");
+        }
+        if self.0.teff().bit_is_set() {
+            write!(f, "TEFF|");
+        }
+        if self.0.tefn().bit_is_set() {
+            write!(f, "TEFN|");
+        }
+        if self.0.tfe().bit_is_set() {
+            write!(f, "TFE|");
+        }
+        if self.0.tcf().bit_is_set() {
+            write!(f, "TCF|");
+        }
+        if self.0.tc().bit_is_set() {
+            write!(f, "TC|");
+        }
+        if self.0.hpm().bit_is_set() {
+            write!(f, "HPM|");
+        }
         write!(f, " RF1:");
-        if self.0.rf1l().bit_is_set() { write!(f, "L|"); }
-        if self.0.rf1f().bit_is_set() { write!(f, "F|"); }
-        if self.0.rf1n().bit_is_set() { write!(f, "N|"); }
+        if self.0.rf1l().bit_is_set() {
+            write!(f, "L|");
+        }
+        if self.0.rf1f().bit_is_set() {
+            write!(f, "F|");
+        }
+        if self.0.rf1n().bit_is_set() {
+            write!(f, "N|");
+        }
         write!(f, " RF0:");
-        if self.0.rf0l().bit_is_set() { write!(f, "L|"); }
-        if self.0.rf0f().bit_is_set() { write!(f, "F|"); }
-        if self.0.rf0n().bit_is_set() { write!(f, "N|"); }
+        if self.0.rf0l().bit_is_set() {
+            write!(f, "L|");
+        }
+        if self.0.rf0f().bit_is_set() {
+            write!(f, "F|");
+        }
+        if self.0.rf0n().bit_is_set() {
+            write!(f, "N|");
+        }
         write!(f, ")")
     }
 }
@@ -414,7 +497,7 @@ impl fmt::Debug for InterruptReason {
 #[derive(Debug)]
 pub enum RxPinState {
     Dominant,
-    Recessive
+    Recessive,
 }
 
 macro_rules! checked_wait_or {
@@ -466,12 +549,8 @@ impl ClassicalCanInstance {
         let mr = &MessageRam::get();
 
         let tx_buffer_put_index = match self.txbuffer_mode {
-            TxBufferMode::Queue => {
-                self.instance.instance_number()
-            },
-            TxBufferMode::Fifo => {
-                txfqs.tfqpi().bits() as usize
-            }
+            TxBufferMode::Queue => self.instance.instance_number(),
+            TxBufferMode::Fifo => txfqs.tfqpi().bits() as usize,
         };
 
         let mut fours = frame.len() / 4;
@@ -485,23 +564,27 @@ impl ClassicalCanInstance {
                 frame.len() % 4
             };
             let mut fourbytes = 0u32;
-            unsafe { core::ptr::copy_nonoverlapping(
-                frame.data().as_ptr().offset(i as isize * 4),
-                &mut fourbytes as *mut _ as *mut u8,
-                to_copy
-            ); }
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    frame.data().as_ptr().offset(i as isize * 4),
+                    &mut fourbytes as *mut _ as *mut u8,
+                    to_copy,
+                );
+            }
             mr.tx_buffer[tx_buffer_put_index].data[i].set(fourbytes);
         }
 
-        mr.tx_buffer[tx_buffer_put_index].t0.write(|w| w.id().frame_id(frame.id()));
-        unsafe { mr.tx_buffer[tx_buffer_put_index].t1.write(|w| w.dlc().bits(frame.len() as u8)) };
+        mr.tx_buffer[tx_buffer_put_index]
+            .t0
+            .write(|w| w.id().frame_id(frame.id()));
+        unsafe {
+            mr.tx_buffer[tx_buffer_put_index]
+                .t1
+                .write(|w| w.dlc().bits(frame.len() as u8))
+        };
         let pend_slot_mask = match self.txbuffer_mode {
-            TxBufferMode::Queue => {
-                self.instance.mask() as u32
-            },
-            TxBufferMode::Fifo => {
-                1 << txfqs.tfqpi().bits()
-            }
+            TxBufferMode::Queue => self.instance.mask() as u32,
+            TxBufferMode::Fifo => 1 << txfqs.tfqpi().bits(),
         };
         unsafe { self.regs_mut().txbar.write(|w| w.ar().bits(pend_slot_mask)) };
 
@@ -660,19 +743,17 @@ impl ClassicalCan for ClassicalCanInstance {
 
     fn free_slots(&self) -> usize {
         match self.txbuffer_mode {
-            TxBufferMode::Queue => { // 1 slot per FDCAN instance for now, probably can be improved
+            TxBufferMode::Queue => {
+                // 1 slot per FDCAN instance for now, probably can be improved
                 let trp = (unsafe { self.regs().txbrp.read().trp().bits() } & 0b111) as u8;
                 if self.instance as u8 & trp != 0 {
                     0
                 } else {
                     1
                 }
-            },
-            TxBufferMode::Fifo => {
-                self.regs().txfqs.read().tffl().bits() as usize
             }
+            TxBufferMode::Fifo => self.regs().txfqs.read().tffl().bits() as usize,
         }
-
     }
 
     // unsafe fn aliased_instances(&self) -> [*const RegisterBlock; 2] {
@@ -685,31 +766,29 @@ pub struct CanController {
     clock_source: ClockSource,
 }
 impl CanController {
-    pub fn new(
-        clock_source: ClockSource,
-        rcc: &mut Rcc,
-        dwt: &mut DWT
-    ) -> Result<Self, Error> {
+    pub fn new(clock_source: ClockSource, rcc: &mut Rcc, dwt: &mut DWT) -> Result<Self, Error> {
         // Enable clock & reset
         rcc.rb.apb1enr1.modify(|_, w| w.fdcanen().set_bit());
         rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().set_bit());
         rcc.rb.apb1rstr1.modify(|_, w| w.fdcanrst().clear_bit());
         // Select clock source
-        rcc.rb.ccipr1.modify(|_, w| unsafe { w.fdcansel().bits(clock_source.into()) }); // 0b00 - HSE, 0b01 - PLLQ, 0b10 - PCLK, 0b11 - RSVD
+        rcc.rb
+            .ccipr
+            .modify(|_, w| unsafe { w.fdcansel().bits(clock_source.into()) }); // 0b00 - HSE, 0b01 - PLLQ, 0b10 - PCLK, 0b11 - RSVD
         let fdcan_clk = match clock_source {
             ClockSource::Hse(hse_freq) => hse_freq,
             ClockSource::Pllq => match rcc.clocks.pll_clk.q {
                 Some(pllq) => pllq,
-                None => { return Err((Error::IncorrectRccConfig)); }
+                None => {
+                    return Err((Error::IncorrectRccConfig));
+                }
             },
-            ClockSource::Pclk => rcc.clocks.apb1_clk
+            ClockSource::Pclk => rcc.clocks.apb1_clk,
         };
         // Enable DWT if not already
         dwt.enable_cycle_counter();
 
-        Ok(CanController {
-            clock_source,
-        })
+        Ok(CanController { clock_source })
     }
 }
 

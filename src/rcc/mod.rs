@@ -183,8 +183,8 @@ impl Rcc {
         assert!(pll_cfg.n > 7 && pll_cfg.n <= 127);
 
         // Disable PLL
-        self.rb.cr.write(|w| w.pllsyson().clear_bit());
-        while self.rb.cr.read().pllsysrdy().bit_is_set() {}
+        self.rb.cr.write(|w| w.pllon().clear_bit());
+        while self.rb.cr.read().pllrdy().bit_is_set() {}
 
         let (freq, pll_sw_bits) = match pll_cfg.mux {
             PLLSrc::HSI => {
@@ -204,27 +204,24 @@ impl Rcc {
         let pll_freq = freq / (pll_cfg.m as u32) * (pll_cfg.n as u32);
 
         let (r, pllr_bits) = match pll_cfg.r {
-            Some(PLLQRDiv::Div2) => (pll_freq/2, 0b00u8),
-            Some(PLLQRDiv::Div4) => (pll_freq/4, 0b01u8),
-            Some(PLLQRDiv::Div6) => (pll_freq/6, 0b10u8),
-            Some(PLLQRDiv::Div8) => (pll_freq/8, 0b11u8),
-            _ => (pll_freq/2, 0b00u8)
+            Some(PLLQRDiv::Div2) => (pll_freq / 2, 0b00u8),
+            Some(PLLQRDiv::Div4) => (pll_freq / 4, 0b01u8),
+            Some(PLLQRDiv::Div6) => (pll_freq / 6, 0b10u8),
+            Some(PLLQRDiv::Div8) => (pll_freq / 8, 0b11u8),
+            _ => (pll_freq / 2, 0b00u8),
         };
 
         let q = match pll_cfg.q {
             Some(div) => {
                 let (q, pllq_bits) = match div {
-                    PLLQRDiv::Div2 => (pll_freq/2, 0b00u8),
-                    PLLQRDiv::Div4 => (pll_freq/4, 0b01u8),
-                    PLLQRDiv::Div6 => (pll_freq/6, 0b10u8),
-                    PLLQRDiv::Div8 => (pll_freq/8, 0b11u8),
+                    PLLQRDiv::Div2 => (pll_freq / 2, 0b00u8),
+                    PLLQRDiv::Div4 => (pll_freq / 4, 0b01u8),
+                    PLLQRDiv::Div6 => (pll_freq / 6, 0b10u8),
+                    PLLQRDiv::Div8 => (pll_freq / 8, 0b11u8),
                 };
                 self.rb
-                    .pllsyscfgr
-                    .modify(|_, w| unsafe { w
-                        .pllsysq().bits(pllq_bits)
-                        .pllsysqen().set_bit()
-                    });
+                    .pllcfgr
+                    .modify(|_, w| unsafe { w.pllq().bits(pllq_bits).pllqen().set_bit() });
                 Some(q.hz())
             }
             _ => None,
@@ -235,33 +232,30 @@ impl Rcc {
                 let div: u8 = div as u8;
 
                 self.rb
-                    .pllsyscfgr
-                    .modify(move |_, w| unsafe { w
-                        .pllsyspdiv().bits(div)
-                        .pllpen().set_bit()
-                    });
+                    .pllcfgr
+                    .modify(move |_, w| unsafe { w.pllpdiv().bits(div).pllpen().set_bit() });
                 let req = pll_freq / div as u32;
                 Some(req.hz())
             }
             _ => None,
         };
 
-        self.rb.pllsyscfgr.modify(move |_, w| unsafe {
+        self.rb.pllcfgr.modify(move |_, w| unsafe {
             w.pllsrc()
                 .bits(pll_sw_bits)
-                .pllsysm()
+                .pllm()
                 .bits(pll_cfg.m - 1)
-                .pllsysn()
+                .plln()
                 .bits(pll_cfg.n)
-                .pllsysr()
+                .pllr()
                 .bits(pllr_bits)
-                .pllsysren()
+                .pllren()
                 .set_bit()
         });
 
         // Enable PLL
-        self.rb.cr.modify(|_, w| w.pllsyson().set_bit());
-        while self.rb.cr.read().pllsysrdy().bit_is_clear() {}
+        self.rb.cr.modify(|_, w| w.pllon().set_bit());
+        while self.rb.cr.read().pllrdy().bit_is_clear() {}
 
         PLLClocks { r: r.hz(), q, p }
     }
@@ -272,8 +266,8 @@ impl Rcc {
     }
 
     pub(crate) fn enable_hsi48(&self) {
-        self.rb.crrcr.write(|w| w.rc48on().set_bit());
-        while self.rb.crrcr.read().rc48rdy().bit_is_clear() {}
+        self.rb.crrcr.write(|w| w.hsi48on().set_bit());
+        while self.rb.crrcr.read().hsi48rdy().bit_is_clear() {}
     }
 
     pub(crate) fn enable_hse(&self, bypass: bool) {

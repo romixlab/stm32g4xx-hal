@@ -14,7 +14,7 @@ version = "0.0.0"
 [dependencies]
 cortex-m = "0.6.1"
 nb = "0.1.2"
-stm32g4 = "0.8.0"
+stm32g4 = { git = "https://github.com/diseraluca/stm32g4", branch = "main" }
 vcell = "0.1.2"
 vhrdcan = { path = "../vhrdcan" }
 
@@ -41,12 +41,12 @@ panic-semihosting = "0.5.3"
 default = ["rt", "stm32g431"]
 rt = ["stm32g4/rt"]
 stm32g431 = ["stm32g4/stm32g431"]
-# stm32g441 = ["stm32g4/stm32g4x1"]
-# stm32g491 = ["stm32g4/stm32g4x1"]
-# stm32g473 = ["stm32g4/stm32g4x3"]
-# stm32g483 = ["stm32g4/stm32g4x3"]
+# stm32g441 = ["stm32g4/stm32g441"]
+# stm32g471 = ["stm32g4/stm32g471"]
+# stm32g473 = ["stm32g4/stm32g473"]
 stm32g474 = ["stm32g4/stm32g474"]
-# stm32g484 = ["stm32g4/stm32g4x4"]
+# stm32g483 = ["stm32g4/stm32g483"]
+# stm32g484 = ["stm32g4/stm32g484"]
 
 [profile.dev]
 codegen-units = 1
