@@ -1,5 +1,6 @@
 //! I2C
-use hal::blocking::i2c::{Read, Write, WriteRead};
+use embedded_hal::blocking::i2c::{Read, Write, WriteRead};
+
 
 use core::cmp;
 use crate::gpio::{gpioa::*, gpiob::*};
@@ -114,7 +115,7 @@ macro_rules! i2c {
         $(
             impl SDAPin<$I2CX> for $PSDA {
                 fn setup(&self) {
-                    self.set_alt_mode(AltFunction::AF6)
+                    self.set_alt_mode(AltFunction::AF4)
                 }
             }
         )+
@@ -122,7 +123,7 @@ macro_rules! i2c {
         $(
             impl SCLPin<$I2CX> for $PSCL {
                 fn setup(&self) {
-                    self.set_alt_mode(AltFunction::AF6)
+                    self.set_alt_mode(AltFunction::AF4)
                 }
             }
         )+
@@ -154,27 +155,28 @@ macro_rules! i2c {
                 scl.setup();
 
                 // Enable clock for I2C
-                rcc.rb.apbenr1.modify(|_, w| w.$i2cxen().set_bit());
+                rcc.rb.apb1enr1.modify(|_, w| w.$i2cxen().set_bit());
 
                 // Reset I2C
-                rcc.rb.apbrstr1.modify(|_, w| w.$i2crst().set_bit());
-                rcc.rb.apbrstr1.modify(|_, w| w.$i2crst().clear_bit());
+                rcc.rb.apb1rstr1.modify(|_, w| w.$i2crst().set_bit());
+                rcc.rb.apb1rstr1.modify(|_, w| w.$i2crst().clear_bit());
 
                 // Make sure the I2C unit is disabled so we can configure it
                 i2c.cr1.modify(|_, w| w.pe().clear_bit());
 
                 // Setup protocol timings
-                let timing_bits = config.timing_bits(rcc.clocks.apb_clk);
+                //let timing_bits = config.timing_bits(rcc.clocks.apb1_clk);
+                let timing_bits = 0x90302030;
                 i2c.timingr.write(|w| unsafe { w.bits(timing_bits) });
 
                 // Enable the I2C processing
                 i2c.cr1.modify(|_, w| unsafe {
                     w.pe()
                         .set_bit()
-                        .dnf()
-                        .bits(config.digital_filter)
-                        .anfoff()
-                        .bit(!config.analog_filter)
+                        //.dnf()
+                        //.bits(config.digital_filter)
+                        //.anfoff()
+                        //.bit(!config.analog_filter)
                 });
 
                 I2c { i2c, sda, scl }
@@ -184,8 +186,35 @@ macro_rules! i2c {
                 (self.i2c, self.sda, self.scl)
             }
 
+            fn check_and_clear_error_flags(&self, isr: &crate::stm32::i2c1::isr::R) -> Result<(), Error> {
+                    // If we have a set overrun flag, clear it and return an OVERRUN error
+                    if isr.ovr().bit_is_set() {
+                        self.i2c.icr.write(|w| w.ovrcf().set_bit());
+                        return Err(Error::Overrun);
+                    }
+
+                    // If we have a set arbitration error or bus error flag, clear it and return an BUS error
+                    if isr.arlo().bit_is_set() | isr.berr().bit_is_set() {
+                        self.i2c
+                            .icr
+                            .write(|w| w.arlocf().set_bit().berrcf().set_bit());
+                        return Err(Error::BusError);
+                    }
+
+                    // If we received a NACK, then signal as a NACK error
+                    if isr.nackf().bit_is_set() {
+                        self.i2c
+                            .icr
+                            .write(|w| w.stopcf().set_bit().nackcf().set_bit());
+                        return Err(Error::Nack);
+                    }
+
+                    Ok(())
+            }
+
+
             fn send_byte(&self, byte: u8) -> Result<(), Error> {
-                // Wait until we're ready for sending
+               /* /// Wait until we're ready for sending
                 while self.i2c.isr.read().txe().bit_is_clear() {}
 
                 // Push out a byte of data
@@ -205,7 +234,21 @@ macro_rules! i2c {
                         return Err(Error::Nack);
                     }
                     return Ok(())
+                }*/
+                        // Wait until we're ready for sending
+                loop {
+                    let isr = self.i2c.isr.read();
+                    self.check_and_clear_error_flags(&isr)?;
+                    if isr.txis().bit_is_set() {
+                        break;
+                    }
                 }
+
+                // Push out a byte of data
+                self.i2c.txdr.write(|w| unsafe { w.bits(u32::from(byte)) });
+
+                self.check_and_clear_error_flags(&self.i2c.isr.read())?;
+                Ok(())
             }
 
             fn recv_byte(&self) -> Result<u8, Error> {
@@ -219,7 +262,7 @@ macro_rules! i2c {
         impl<SDA, SCL> WriteRead for I2c<$I2CX, SDA, SCL> {
             type Error = Error;
 
-            fn write_read(
+            /*fn write_read(
                 &mut self,
                 addr: u8,
                 bytes: &[u8],
@@ -229,7 +272,73 @@ macro_rules! i2c {
                 self.read(addr, buffer)?;
 
                 Ok(())
+            }*/
+
+             fn write_read(&mut self, addr: u8, bytes: &[u8], buffer: &mut [u8]) -> Result<(), Error> {
+        // Set up current slave address for writing and disable autoending
+        self.i2c.cr2.modify(|_, w| unsafe{
+            w.sadd()
+                .bits(u16::from(addr) << 1)
+                .nbytes()
+                .bits(bytes.len() as u8)
+                .rd_wrn()
+                .clear_bit()
+                .autoend()
+                .clear_bit()
+        });
+
+        // Send a START condition
+        self.i2c.cr2.modify(|_, w| w.start().set_bit());
+
+        // Wait until the transmit buffer is empty and there hasn't been any error condition
+        loop {
+            let isr = self.i2c.isr.read();
+            self.check_and_clear_error_flags(&isr)?;
+            if isr.txis().bit_is_set() || isr.tc().bit_is_set() {
+                break;
             }
+        }
+
+        // Send out all individual bytes
+        for c in bytes {
+            self.send_byte(*c)?;
+        }
+
+        // Wait until data was sent
+        loop {
+            let isr = self.i2c.isr.read();
+            self.check_and_clear_error_flags(&isr)?;
+            if isr.tc().bit_is_set() {
+                break;
+            }
+        }
+
+        // Set up current address for reading
+        self.i2c.cr2.modify(|_, w| unsafe{
+            w.sadd()
+                .bits(u16::from(addr) << 1)
+                .nbytes()
+                .bits(buffer.len() as u8)
+                .rd_wrn()
+                .set_bit()
+        });
+
+        // Send another START condition
+        self.i2c.cr2.modify(|_, w| w.start().set_bit());
+
+        // Send the autoend after setting the start to get a restart
+        self.i2c.cr2.modify(|_, w| w.autoend().set_bit());
+
+        // Now read in all bytes
+        for c in buffer.iter_mut() {
+            *c = self.recv_byte()?;
+        }
+
+        // Check and clear flags if they somehow ended up set
+        self.check_and_clear_error_flags(&self.i2c.isr.read())?;
+
+        Ok(())
+    }
         }
 
         impl<SDA, SCL> Write for I2c<$I2CX, SDA, SCL> {
@@ -297,11 +406,14 @@ i2c!(
         PA10<Output<OpenDrain>>,
         PB7<Output<OpenDrain>>,
         PB9<Output<OpenDrain>>,
+        PA14<Output<OpenDrain>>,
     ],
     scl: [
         PA9<Output<OpenDrain>>,
         PB6<Output<OpenDrain>>,
         PB8<Output<OpenDrain>>,
+        PA13<Output<OpenDrain>>,
+        PA15<Output<OpenDrain>>,
     ],
 );
 
@@ -311,11 +423,13 @@ i2c!(
     i2c2en,
     i2c2rst,
     sda: [
+        PA8<Output<OpenDrain>>,
         PA12<Output<OpenDrain>>,
         PB11<Output<OpenDrain>>,
         PB14<Output<OpenDrain>>,
     ],
     scl: [
+        PA9<Output<OpenDrain>>,
         PA11<Output<OpenDrain>>,
         PB10<Output<OpenDrain>>,
         PB13<Output<OpenDrain>>,
