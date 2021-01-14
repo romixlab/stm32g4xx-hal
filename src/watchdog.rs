@@ -4,27 +4,27 @@ use crate::stm32::{IWDG, WWDG};
 use crate::time::{Hertz, MicroSecond};
 use hal::watchdog;
 
-pub struct IndependedWatchdog {
+pub struct IndependentWatchdog {
     iwdg: IWDG,
 }
 
-impl watchdog::Watchdog for IndependedWatchdog {
+impl watchdog::Watchdog for IndependentWatchdog {
     fn feed(&mut self) {
         self.iwdg.kr.write(|w| unsafe { w.key().bits(0xaaaa) });
     }
 }
 
-impl watchdog::WatchdogEnable for IndependedWatchdog {
+impl watchdog::WatchdogEnable for IndependentWatchdog {
     type Time = MicroSecond;
 
     fn start<T>(&mut self, period: T)
     where
         T: Into<MicroSecond>,
     {
-        let mut cycles = period.into().cycles(16_384.hz());
+        let mut cycles = period.into().cycles(8_192.hz());
         let mut psc = 0;
         let mut reload = 0;
-        while psc < 6 {
+        while psc <= 7 {
             reload = cycles;
             if reload <= 0xfff {
                 break;
@@ -42,7 +42,7 @@ impl watchdog::WatchdogEnable for IndependedWatchdog {
         self.iwdg.pr.write(|w| unsafe { w.pr().bits(psc) });
         self.iwdg
             .rlr
-            .write(|w| unsafe { w.rl().bits(reload as u16) });
+            .write(|w| unsafe { w.rl().bits(cycles as u16) });
 
         while self.iwdg.sr.read().bits() > 0 {}
 
@@ -51,18 +51,18 @@ impl watchdog::WatchdogEnable for IndependedWatchdog {
 }
 
 pub trait IWDGExt {
-    fn constrain(self) -> IndependedWatchdog;
+    fn constrain(self) -> IndependentWatchdog;
 }
 
-impl IndependedWatchdog {
+impl IndependentWatchdog {
     pub fn release(self) -> IWDG {
         self.iwdg
     }
 }
 
 impl IWDGExt for IWDG {
-    fn constrain(self) -> IndependedWatchdog {
-        IndependedWatchdog { iwdg: self }
+    fn constrain(self) -> IndependentWatchdog {
+        IndependentWatchdog { iwdg: self }
     }
 }
 
@@ -131,8 +131,8 @@ pub trait WWDGExt {
 
 impl WWDGExt for WWDG {
     fn constrain(self, rcc: &mut Rcc) -> WindowWatchdog {
-        rcc.rb.apbenr1.modify(|_, w| w.wwdgen().set_bit());
-        let clk = rcc.clocks.apb_clk.0 / 4096;
+        rcc.rb.apb1enr1.modify(|_, w| w.wwdgen().set_bit());
+        let clk = rcc.clocks.apb1_clk.0 / 4096;
         WindowWatchdog {
             wwdg: self,
             clk: clk.hz(),
