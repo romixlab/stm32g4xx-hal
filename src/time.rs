@@ -1,3 +1,5 @@
+use core::ops::{Add, Div};
+
 /// A measurement of a monotonically nondecreasing clock
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub struct Instant(pub u32);
@@ -61,7 +63,7 @@ impl U32Ext for u32 {
 }
 
 impl Hertz {
-    pub fn duration(&self, cycles: u32) -> MicroSecond {
+    pub fn duration(self, cycles: u32) -> MicroSecond {
         let cycles = cycles as u64;
         let clk = self.0 as u64;
         let us = cycles.saturating_mul(1_000_000_u64) / clk;
@@ -69,8 +71,24 @@ impl Hertz {
     }
 }
 
+impl Add for Hertz {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self::Output {
+        Self(self.0 + other.0)
+    }
+}
+
+impl Div for Hertz {
+    type Output = u32;
+
+    fn div(self, other: Self) -> Self::Output {
+        self.0 / other.0
+    }
+}
+
 impl MicroSecond {
-    pub fn cycles(&self, clk: Hertz) -> u32 {
+    pub fn cycles(self, clk: Hertz) -> u32 {
         assert!(self.0 > 0);
         let clk = clk.0 as u64;
         let period = self.0 as u64;
@@ -79,17 +97,24 @@ impl MicroSecond {
     }
 }
 
-impl Into<MicroSecond> for Hertz {
-    fn into(self) -> MicroSecond {
-        assert!(self.0 <= 1_000_000);
-        MicroSecond(1_000_000 / self.0)
+impl Add for MicroSecond {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self::Output {
+        Self(self.0 + other.0)
     }
 }
 
-impl Into<Hertz> for MicroSecond {
-    fn into(self) -> Hertz {
-        let period = self.0;
-        assert!(period > 0 && period <= 1_000_000);
-        Hertz(1_000_000 / period)
+impl From<Hertz> for MicroSecond {
+    fn from(freq: Hertz) -> MicroSecond {
+        assert!(freq.0 <= 1_000_000);
+        MicroSecond(1_000_000 / freq.0)
+    }
+}
+
+impl From<MicroSecond> for Hertz {
+    fn from(period: MicroSecond) -> Hertz {
+        assert!(period.0 > 0 && period.0 <= 1_000_000);
+        Hertz(1_000_000 / period.0)
     }
 }

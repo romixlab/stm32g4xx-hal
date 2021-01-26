@@ -20,8 +20,8 @@ fn main() -> ! {
     let dp = stm32::Peripherals::take().expect("cannot take peripherals");
     let mut rcc = dp.RCC.constrain();
 
-    let gpioa = dp.GPIOA.split(&mut rcc);
-    let mut led = gpioa.pa5.into_push_pull_output();
+    let gpiob = dp.GPIOB.split(&mut rcc);
+    let mut led = gpiob.pb8.into_push_pull_output();
 
     let mut timer = dp.TIM15.timer(&mut rcc);
     timer.start(500.ms());

@@ -8,24 +8,27 @@ use cortex_m_rt as rt;
 use panic_halt as _;
 use stm32g4xx_hal as hal;
 
+use nb::block;
 use hal::prelude::*;
 use hal::rcc::Config;
 use hal::stm32;
+use hal::pwr::PWR;
+use hal::lptim::{LpTimer, ClockSrc};
 use rt::entry;
 
 #[entry]
 fn main() -> ! {
     let dp = stm32::Peripherals::take().expect("cannot take peripherals");
-    let cp = cortex_m::Peripherals::take().expect("cannot take core peripherals");
-    let mut rcc = dp.RCC.freeze(Config::pll());
-
+    let mut rcc = dp.RCC.freeze(Config::hsi());
+    let mut pwr = PWR::new(dp.PWR, &mut rcc);
     let gpiob = dp.GPIOB.split(&mut rcc);
     let mut led = gpiob.pb8.into_push_pull_output();
 
-    let mut delay = cp.SYST.delay(&rcc.clocks);
+    let mut lptim = LpTimer::init_periodic(dp.LPTIMER1, &mut pwr, &mut rcc, ClockSrc::Lsi);
 
     loop {
         led.toggle().unwrap();
-        delay.delay(500.ms());
+        lptim.start(2.hz());
+        block!(lptim.wait()).unwrap();        
     }
 }

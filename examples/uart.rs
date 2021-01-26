@@ -5,34 +5,34 @@
 
 extern crate cortex_m;
 extern crate cortex_m_rt as rt;
-extern crate nb;
-extern crate panic_halt;
 extern crate stm32g4xx_hal as hal;
+extern crate panic_halt;
 
 use core::fmt::Write;
 
-use nb::block;
 use hal::prelude::*;
-use hal::serial::Config;
+use hal::serial::FullConfig;
 use hal::stm32;
+use nb::block;
 use rt::entry;
 
 #[entry]
 fn main() -> ! {
     let dp = stm32::Peripherals::take().expect("cannot take peripherals");
     let mut rcc = dp.RCC.constrain();
-    let gpio = dp.GPIOC.split(&mut rcc);
+    let gpioa = dp.GPIOA.split(&mut rcc);
+    let cfg = FullConfig::default();
     let mut usart = dp
-        .USART1
-        .usart(gpio.pc4, gpio.pc5, Config::default(), &mut rcc)
+        .USART2
+        .usart(gpioa.pa2, gpioa.pa3, cfg, &mut rcc)
         .unwrap();
 
-    write!(usart, "Hello\r\n").unwrap();
+    writeln!(usart, "Hello\r").unwrap();
 
     let mut cnt = 0;
     loop {
         let byte = block!(usart.read()).unwrap();
-        write!(usart, "{}: {}\r\n", cnt, byte).unwrap();
+        writeln!(usart, "{}: {}\r", cnt, byte).unwrap();
         cnt += 1;
     }
 }

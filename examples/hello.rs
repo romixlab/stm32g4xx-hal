@@ -3,17 +3,23 @@
 #![no_main]
 #![no_std]
 
-extern crate cortex_m;
-extern crate cortex_m_rt as rt;
-extern crate panic_halt;
-extern crate stm32g4xx_hal as hal;
+use cortex_m as _;
+use cortex_m_rt as rt;
+use panic_halt as _;
+use stm32g4xx_hal as _;
 
-use cortex_m_semihosting::hprintln;
+use rtt_target::{rprintln, rtt_init_print};
 use rt::entry;
 
 #[entry]
 fn main() -> ! {
-    hprintln!("Hello, STM32G4!").unwrap();
-
-    loop {}
+    rtt_init_print!();    
+    loop {
+        for i in 0.. {
+            rprintln!("Hello, world {}", i);
+            for _ in 0..1_000_000 {
+                cortex_m::asm::nop();
+            }
+        }
+    }
 }

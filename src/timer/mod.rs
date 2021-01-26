@@ -1,25 +1,28 @@
 //! Timers
+use crate::rcc::Rcc;
+use crate::stm32::*;
+use crate::time::{Hertz, MicroSecond};
 use cortex_m::peripheral::syst::SystClkSource;
 use cortex_m::peripheral::SYST;
-use embedded_hal::timer::{CountDown, Periodic};
-use nb;
+use crate::hal::timer::{CountDown, Periodic};
 use void::Void;
 
-use crate::rcc::Rcc;
-
-#[cfg(any(
-    feature = "stm32g431",
-    feature = "stm32g474"
-))]
-use crate::stm32::{TIM1, TIM15, TIM16, TIM17, TIM2, TIM3, TIM4, TIM6, TIM7, TIM8};
-
-use crate::time::{Hertz, MicroSecond};
+pub mod opm;
+pub mod pins;
+pub mod pwm;
+pub mod qei;
+pub mod stopwatch;
 
 /// Hardware timers
 pub struct Timer<TIM> {
     clk: Hertz,
     tim: TIM,
 }
+
+pub struct Channel1;
+pub struct Channel2;
+pub struct Channel3;
+pub struct Channel4;
 
 /// System timer
 impl Timer<SYST> {
@@ -40,6 +43,10 @@ impl Timer<SYST> {
     /// Stops listening
     pub fn unlisten(&mut self) {
         self.tim.disable_interrupt()
+    }
+
+    pub fn get_current(&self) -> u32 {
+        SYST::get_current()
     }
 }
 
@@ -79,7 +86,7 @@ impl TimerExt<SYST> for SYST {
 impl Periodic for Timer<SYST> {}
 
 macro_rules! timers {
-    ($($TIM:ident: ($tim:ident, $timXen:ident, $timXrst:ident, $apbenr:ident, $apbrstr:ident),)+) => {
+    ($($TIM:ident: ($tim:ident, $timXen:ident, $timXrst:ident, $apbenr:ident, $apbrstr:ident, $cnt:ident $(,$cnt_h:ident)*),)+) => {
         $(
             impl Timer<$TIM> {
                 /// Configures a TIM peripheral as a periodic count down timer
@@ -92,6 +99,16 @@ macro_rules! timers {
                         tim,
                         clk: rcc.clocks.apb_tim_clk,
                     }
+                }
+
+                /// Pauses timer
+                pub fn pause(&mut self) {
+                    self.tim.cr1.modify(|_, w| w.cen().clear_bit());
+                }
+
+                /// Resumes timer
+                pub fn resume(&mut self) {
+                    self.tim.cr1.modify(|_, w| w.cen().set_bit());
                 }
 
                 /// Starts listening
@@ -107,6 +124,21 @@ macro_rules! timers {
                 /// Clears interrupt flag
                 pub fn clear_irq(&mut self) {
                     self.tim.sr.modify(|_, w| w.uif().clear_bit());
+                }
+
+                /// Resets counter value
+                pub fn reset(&mut self) {
+                    self.tim.cnt.reset();
+                }
+
+                /// Gets timer counter current value
+                pub fn get_current(&self) -> u32 {
+                    let _high = 0;
+                    $(
+                        let _high = self.tim.cnt.read().$cnt_h().bits() as u32;
+                    )*
+                    let low = self.tim.cnt.read().$cnt().bits() as u32;
+                    low | (_high << 16)
                 }
 
                 /// Releases the TIM peripheral
@@ -159,15 +191,21 @@ macro_rules! timers {
 }
 
 timers! {
-    TIM1: (tim1, tim1en, tim1rst, apb2enr, apb2rstr),
-    TIM2: (tim2, tim2en, tim2rst, apb1enr1, apb1rstr1),
-    TIM3: (tim3, tim3en, tim3rst, apb1enr1, apb1rstr1),
-    TIM4: (tim4, tim4en, tim4rst, apb1enr1, apb1rstr1),
-//    TIM5: (tim5, tim5en, tim5rst, apb1enr1, apb1rstr1),
-    TIM6: (tim6, tim6en, tim6rst, apb1enr1, apb1rstr1),
-    TIM7: (tim7, tim7en, tim7rst, apb1enr1, apb1rstr1),
-    TIM8: (tim8, tim8en, tim8rst, apb2enr, apb2rstr),
-    TIM15: (tim15, tim15en, tim15rst, apb2enr, apb2rstr),
-    TIM16: (tim16, tim16en, tim16rst, apb2enr, apb2rstr),
-    TIM17: (tim17, tim17en, tim17rst, apb2enr, apb2rstr),
+    TIM1: (tim1, tim1en, tim1rst, apb2enr, apb2rstr, cnt),
+    TIM3: (tim3, tim3en, tim3rst, apb1enr1, apb1rstr1, cnt),
+    // TIM14: (tim14, tim14en, tim14rst, apbenr2, apbrstr2, cnt),
+    TIM16: (tim16, tim16en, tim16rst, apb2enr, apb2rstr, cnt),
+    TIM17: (tim17, tim17en, tim17rst, apb2enr, apb2rstr, cnt),
+}
+
+#[cfg(feature = "stm32g0x1")]
+timers! {
+    TIM2: (tim2, tim2en, tim2rst, apbenr1, apbrstr1, cnt_l, cnt_h),
+}
+
+#[cfg(any(feature = "stm32g070", feature = "stm32g071", feature = "stm32g081"))]
+timers! {
+    TIM6: (tim6, tim6en, tim6rst, apbenr1, apbrstr1, cnt),
+    TIM7: (tim7, tim7en, tim7rst, apbenr1, apbrstr1, cnt),
+    TIM15: (tim15, tim15en, tim15rst, apbenr2, apbrstr2, cnt),
 }

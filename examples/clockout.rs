@@ -16,11 +16,11 @@ use rt::entry;
 #[entry]
 fn main() -> ! {
     let dp = stm32::Peripherals::take().expect("cannot take peripherals");
-    let mut rcc = dp.RCC.freeze(Config::lsi());
+    let mut rcc = dp.RCC.freeze(Config::hsi());
     let gpioa = dp.GPIOA.split(&mut rcc);
 
     let lsco = gpioa.pa2.lsco(LSCOSrc::LSI, &mut rcc);
-    let mco = gpioa.pa9.mco(MCOSrc::SysClk, Prescaler::Div2, &mut rcc);
+    let mco = gpioa.pa8.mco(MCOSrc::SysClk, Prescaler::Div2, &mut rcc);
 
     lsco.enable();
     mco.enable();

@@ -1,43 +1,38 @@
 //! Quadrature Encoder Interface
-use crate::gpio::gpioa::{PA0, PA1, PA6, PA7, PA8, PA9};
-use crate::gpio::{AltFunction, DefaultMode};
 use crate::hal::{self, Direction};
 use crate::rcc::Rcc;
+
+#[cfg(feature = "stm32g0x1")]
 use crate::stm32::{TIM1, TIM2, TIM3};
+#[cfg(feature = "stm32g0x0")]
+use crate::stm32::{TIM1, TIM3};
 
-pub trait Pins<TIM> {
-    fn setup(&self);
-}
-
-impl Pins<TIM1> for (PA8<DefaultMode>, PA9<DefaultMode>) {
-    fn setup(&self) {
-        self.0.set_alt_mode(AltFunction::AF2);
-        self.1.set_alt_mode(AltFunction::AF2);
-    }
-}
-
-impl Pins<TIM2> for (PA0<DefaultMode>, PA1<DefaultMode>) {
-    fn setup(&self) {
-        self.0.set_alt_mode(AltFunction::AF2);
-        self.1.set_alt_mode(AltFunction::AF2);
-    }
-}
-
-impl Pins<TIM3> for (PA6<DefaultMode>, PA7<DefaultMode>) {
-    fn setup(&self) {
-        self.0.set_alt_mode(AltFunction::AF2);
-        self.1.set_alt_mode(AltFunction::AF2);
-    }
-}
+use crate::timer::pins::TimerPin;
+use crate::timer::*;
 
 pub struct Qei<TIM, PINS> {
     tim: TIM,
     pins: PINS,
 }
 
+pub trait QeiPins<TIM> {
+    fn setup(&self);
+}
+
+impl<TIM, P1, P2> QeiPins<TIM> for (P1, P2)
+where
+    P1: TimerPin<TIM, Channel = Channel1>,
+    P2: TimerPin<TIM, Channel = Channel2>,
+{
+    fn setup(&self) {
+        self.0.setup();
+        self.1.setup();
+    }
+}
+
 pub trait QeiExt<TIM, PINS>
 where
-    PINS: Pins<TIM>,
+    PINS: QeiPins<TIM>,
 {
     fn qei(self, pins: PINS, rcc: &mut Rcc) -> Qei<TIM, PINS>;
 }
@@ -45,7 +40,7 @@ where
 macro_rules! qei {
     ($($TIMX:ident: ($tim:ident, $timXen:ident, $timXrst:ident, $apbenr:ident, $apbrstr:ident, $arr:ident, $cnt:ident),)+) => {
         $(
-            impl<PINS> Qei<$TIMX, PINS> where PINS: Pins<$TIMX> {
+            impl<PINS> Qei<$TIMX, PINS> where PINS: QeiPins<$TIMX> {
                 fn $tim(tim: $TIMX, pins: PINS, rcc: &mut Rcc) -> Self {
                     pins.setup();
                     // enable and reset peripheral to a clean slate state
@@ -54,12 +49,12 @@ macro_rules! qei {
                     rcc.rb.$apbrstr.modify(|_, w| w.$timXrst().clear_bit());
 
                     // Configure TxC1 and TxC2 as captures
-                    tim.ccmr1_output.write(|w| unsafe {
+                    tim.ccmr1_output().write(|w| unsafe {
                         w.cc1s().bits(0b01).cc2s().bits(0b01)
                     });
 
-                    // Encoder mode, count up/down on both TI1FP1 and TI2FP2
-                    tim.smcr.write(|w| unsafe { w.sms().bits(0b011) });
+                    // Encoder mode 2.
+                    tim.smcr.write(|w| unsafe { w.sms().bits(0b010) });
 
                     // Enable and configure to capture on rising edge
                     tim.ccer.write(|w| {
@@ -77,7 +72,6 @@ macro_rules! qei {
                             .clear_bit()
                     });
 
-                    tim.arr.write(|w| unsafe { w.$arr().bits(0xffff) });
                     tim.cr1.write(|w| w.cen().set_bit());
                     Qei { tim, pins }
                 }
@@ -103,7 +97,7 @@ macro_rules! qei {
                 }
             }
 
-            impl<PINS> QeiExt<$TIMX, PINS> for $TIMX where PINS: Pins<$TIMX> {
+            impl<PINS> QeiExt<$TIMX, PINS> for $TIMX where PINS: QeiPins<$TIMX> {
                 fn qei(self, pins: PINS, rcc: &mut Rcc) -> Qei<$TIMX, PINS> {
                     Qei::$tim(self, pins, rcc)
                 }
@@ -113,7 +107,11 @@ macro_rules! qei {
 }
 
 qei! {
-    TIM1: (tim1,  tim1en, tim1rst, apbenr2, apbrstr2, arr, cnt),
-    TIM2: (tim2,  tim2en, tim2rst, apbenr1, apbrstr1, arr_l, cnt_l),
-    TIM3: (tim3,  tim3en, tim3rst, apbenr1, apbrstr1, arr_l, cnt_l),
+    TIM1: (tim1,  tim1en, tim1rst, apb2enr, apb2rstr, arr, cnt),
+    TIM3: (tim3,  tim3en, tim3rst, apb1enr1, apb1rstr1, arr_l, cnt),
+}
+
+#[cfg(feature = "stm32g0x1")]
+qei! {
+    TIM2: (tim2,  tim2en, tim2rst, apb1enr1, apb1rstr1, arr_l, cnt_l),
 }
