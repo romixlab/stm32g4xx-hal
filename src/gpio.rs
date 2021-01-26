@@ -135,14 +135,14 @@ macro_rules! gpio {
 
             impl<MODE> StatefulOutputPin for $PXx<Output<MODE>> {
                 fn is_set_high(&self) -> Result<bool, ()> {
-                    let is_high = self.is_set_low()?;
-                    Ok(is_high)
+                    let is_set_high = !self.is_set_low()?;
+                    Ok(is_set_high)
                 }
 
                 fn is_set_low(&self) -> Result<bool, ()> {
                     // NOTE(unsafe) atomic read with no side effects
-                    let is_low = unsafe { (*$GPIOX::ptr()).odr.read().bits() & (1 << self.i) == 0 };
-                    Ok(is_low)
+                    let is_set_low = unsafe { (*$GPIOX::ptr()).odr.read().bits() & (1 << self.i) == 0 };
+                    Ok(is_set_low)
                 }
             }
 
@@ -151,7 +151,7 @@ macro_rules! gpio {
 
             impl<MODE> InputPin for $PXx<Output<MODE>> {
                 type Error = ();
-                
+
                 fn is_high(&self) -> Result<bool, ()> {
                     let is_high = !self.is_low()?;
                     Ok(is_high)
@@ -570,4 +570,23 @@ gpio!(GPIOF, gpiof, gpiofen, PF, 5, [
     PF13: (pf13, 13),
     PF14: (pf14, 14),
     PF15: (pf15, 15),
+]);
+
+gpio!(GPIOG, gpiog, gpiogen, PG, 6, [
+    PG0: (pg0, 0),
+    PG1: (pg1, 1),
+    PG2: (pg2, 2),
+    PG3: (pg3, 3),
+    PG4: (pg4, 4),
+    PG5: (pg5, 5),
+    PG6: (pg6, 6),
+    PG7: (pg7, 7),
+    PG8: (pg8, 8),
+    PG9: (pg9, 9),
+    PG10: (pg10, 10),
+    PG11: (pg11, 11),
+    PG12: (pg12, 12),
+    PG13: (pg13, 13),
+    PG14: (pg14, 14),
+    PG15: (pg15, 15),
 ]);
