@@ -608,27 +608,77 @@ macro_rules! uart_full {
     };
 }
 
+#[cfg(any(feature = "stm32g474"))]
 uart_shared!(USART1, USART1_RX, USART1_TX,
 tx: [
-    (PA9, AltFunction::AF1),
-    (PB6, AltFunction::AF0),
-    (PC4, AltFunction::AF1),
+    (PA9, AltFunction::AF7),
+    (PB6, AltFunction::AF7),
 ],
 rx: [
-    (PA10, AltFunction::AF1),
-    (PB7, AltFunction::AF0),
-    (PC5, AltFunction::AF1),
+    (PA10, AltFunction::AF7),
+    (PB7, AltFunction::AF7),
 ]);
+
+#[cfg(any(feature = "stm32g474"))]
 uart_shared!(USART2, USART2_RX, USART2_TX,
     tx: [
         (PA2, AltFunction::AF7),
-        (PA14, AltFunction::AF1),
-        (PD5, AltFunction::AF0),
+        (PA14, AltFunction::AF7),
+        (PD5, AltFunction::AF7),
+        (PB3, AltFunction::AF7),
     ],
     rx: [
         (PA3, AltFunction::AF7),
-        (PA15, AltFunction::AF1),
-        (PD6, AltFunction::AF0),
+        (PA15, AltFunction::AF7),
+        (PD6, AltFunction::AF7),
+        (PB4, AltFunction::AF7),
+    ]
+);
+
+#[cfg(any(feature = "stm32g474"))]
+uart_shared!(USART3, USART3_RX, USART3_TX,
+    tx: [
+        (PB9, AltFunction::AF7),
+        (PB10, AltFunction::AF7),
+        (PD8, AltFunction::AF7),
+        (PC10, AltFunction::AF7),
+
+    ],
+    rx: [
+        (PB8, AltFunction::AF7),
+        (PB11, AltFunction::AF7),
+        (PD9, AltFunction::AF7),
+        (PC11, AltFunction::AF7),
+    ]
+);
+
+#[cfg(any(feature = "stm32g474"))]
+uart_shared!(UART4, UART4_RX, UART4_TX,
+    tx: [
+        (PC10, AltFunction::AF5),
+    ],
+    rx: [
+        (PC11, AltFunction::AF5),
+    ]
+);
+
+#[cfg(any(feature = "stm32g474"))]
+uart_shared!(UART5, UART5_RX, UART5_TX,
+    tx: [
+        (PC12, AltFunction::AF5),
+    ],
+    rx: [
+        (PD2, AltFunction::AF5),
+    ]
+);
+
+#[cfg(feature = "stm32g474")]
+uart_shared!(LPUART1, LPUART1_RX, LPUART1_TX,
+    tx: [
+        (PB11, AltFunction::AF8),
+    ],
+    rx: [
+        (PB10, AltFunction::AF8),
     ]
 );
 
@@ -683,6 +733,7 @@ uart_full!(USART1, usart1, apb2enr, usart1en, 1);
 uart_full!(USART2, usart2, apb1enr1, usart2en, 1);
 uart_full!(USART3, usart3, apb1enr1, usart3en, 1);
 uart_basic!(UART4, usart4, apb1enr1, uart4en, 1);
+uart_basic!(UART5, usart5, apb1enr1, uart5en, 1);
 
 // #[cfg(any(feature = "stm32g030", feature = "stm32g031", feature = "stm32g041"))]
 // uart_basic!(USART2, usart2, apbenr1, usart2en, 1);
