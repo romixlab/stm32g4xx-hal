@@ -20,7 +20,7 @@ pub enum SysClockSrc {
     HSI,
     HSE(Hertz),
     HSE_BYPASS(Hertz),
-    PLL, // Specifically PLL R Clock
+    PLL(PllConfig), // Specifically PLL R Clock
 }
 
 /// 48MHz Clock Source
@@ -270,7 +270,7 @@ impl Default for PllConfig {
 /// Clocks configutation
 pub struct Config {
     pub(crate) sys_mux: SysClockSrc,
-    pub(crate) pll_cfg: PllConfig,
+    //pub(crate) pll_cfg: PllConfig,
     pub(crate) ahb_psc: Prescaler,
     pub(crate) apb1_psc: Prescaler,
     pub(crate) apb2_psc: Prescaler,
@@ -282,7 +282,7 @@ impl Config {
     }
 
     pub fn pll() -> Self {
-        Config::default().clock_src(SysClockSrc::PLL)
+        Config::default().clock_src(SysClockSrc::PLL(PllConfig::default()))
     }
 
     pub fn hsi() -> Self {
@@ -298,10 +298,10 @@ impl Config {
         self
     }
 
-    pub fn pll_cfg(mut self, cfg: PllConfig) -> Self {
-        self.pll_cfg = cfg;
-        self
-    }
+    // pub fn pll_cfg(mut self, cfg: PllConfig) -> Self {
+    //     self.pll_cfg = cfg;
+    //     self
+    // }
 
     pub fn ahb_psc(mut self, psc: Prescaler) -> Self {
         self.ahb_psc = psc;
@@ -322,8 +322,8 @@ impl Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            sys_mux: SysClockSrc::PLL,
-            pll_cfg: PllConfig::default(),
+            sys_mux: SysClockSrc::PLL(PllConfig::default()),
+            //pll_cfg: PllConfig::default(),
             ahb_psc: Prescaler::NotDivided,
             apb1_psc: Prescaler::NotDivided,
             apb2_psc: Prescaler::NotDivided,

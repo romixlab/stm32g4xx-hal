@@ -27,7 +27,7 @@ pub struct Clocks {
     /// APB timers frequency
     pub apb_tim_clk: Hertz,
     /// PLL frequency
-    pub pll_clk: PLLClocks,
+    pub pll_clk: Option<PLLClocks>,
 }
 
 impl Clocks {
@@ -56,11 +56,11 @@ impl Default for Clocks {
             apb1_clk: 160.mhz(),
             apb2_clk: 160.mhz(),
             apb_tim_clk: 160.mhz(),
-            pll_clk: PLLClocks {
+            pll_clk: Some(PLLClocks {
                 r: 160.mhz(),
                 q: Some(80.mhz()),
                 p: Some(160.mhz()),
-            },
+            }),
         }
     }
 }
@@ -75,21 +75,22 @@ pub struct Rcc {
 impl Rcc {
     /// Apply clock configuration
     pub fn freeze(self, rcc_cfg: Config) -> Self {
-        let pll_clk = self.config_pll(rcc_cfg.pll_cfg);
-
-        let (sys_clk, sw_bits) = match rcc_cfg.sys_mux {
+        let (sys_clk, sw_bits, pll_clk) = match rcc_cfg.sys_mux {
             SysClockSrc::HSE(freq) => {
                 self.enable_hse(false);
-                (freq, 0b10)
+                (freq, 0b10, None)
             }
             SysClockSrc::HSE_BYPASS(freq) => {
                 self.enable_hse(true);
-                (freq, 0b10)
+                (freq, 0b10, None)
             }
-            SysClockSrc::PLL => (pll_clk.r, 0b11),
+            SysClockSrc::PLL(pll_cfg) => {
+                let pll_clk = self.config_pll(pll_cfg);
+                (pll_clk.r, 0b11, Some(pll_clk))
+            },
             SysClockSrc::HSI => {
                 self.enable_hsi();
-                (HSI_FREQ.hz(), 0b01)
+                (HSI_FREQ.hz(), 0b01, None)
             }
         };
 

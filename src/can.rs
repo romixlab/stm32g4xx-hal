@@ -777,7 +777,7 @@ impl CanController {
             .modify(|_, w| unsafe { w.fdcansel().bits(clock_source.into()) }); // 0b00 - HSE, 0b01 - PLLQ, 0b10 - PCLK, 0b11 - RSVD
         let fdcan_clk = match clock_source {
             ClockSource::Hse(hse_freq) => hse_freq,
-            ClockSource::Pllq => match rcc.clocks.pll_clk.q {
+            ClockSource::Pllq => match rcc.clocks.pll_clk.unwrap().q {
                 Some(pllq) => pllq,
                 None => {
                     return Err((Error::IncorrectRccConfig));
